@@ -25,6 +25,8 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        type:
+          json_format_mapper: com.clara.challenge.watchdog.config.Jackson3JsonFormatMapper
     database: postgresql
     database-platform: org.hibernate.dialect.PostgreSQLDialect
 

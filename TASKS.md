@@ -78,7 +78,7 @@
 
 ## Task 6 — Implement trace-status calculation
 
-**Status:** Pending
+**Status:** Complete
 
 * Define a UTC `Clock` bean.
 * Inject `Clock` into time-dependent services.
@@ -91,7 +91,7 @@
 
 ## Task 7 — Implement event ingestion
 
-**Status:** Pending
+**Status:** Complete
 
 * Process event ingestion in one transaction.
 * Look up an existing event by `eventId` before modifying trace state.
@@ -114,7 +114,7 @@
 
 ## Task 8 — Implement HTTP endpoints
 
-**Status:** Pending
+**Status:** Complete
 
 * Add `POST /events`, exposed externally as `POST /api/events`.
 * Add `GET /traces/{traceId}/status`, exposed externally as `GET /api/traces/{traceId}/status`.

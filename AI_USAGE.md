@@ -1049,6 +1049,368 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 > 4. exact integrity-violation recovery behavior;
 > 5. remaining risks.
 
+Prompt 13 superseded two Task 7 instructions from Prompt 12:
+
+* One `receivedAt` value is captured per public `ingest` call and reused across the single bounded retry.
+* An optimistic-lock failure is inspected for a concurrently persisted `eventId` before it is translated into a trace-concurrency conflict.
+
+The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
+
+### Prompt 14 — Implement Task 8: HTTP endpoints
+
+> Review the current `README.md`, `TASKS.md`, `AI_USAGE.md`, API contracts, validation rules, exception handling, `EventIngestionService`, and `TraceStatusService` before editing.
+>
+> Implement only Task 8: expose the watchdog services through HTTP.
+>
+> Do not mark Tasks 6, 7, or 8 complete in `TASKS.md`. They will remain pending until the endpoints are exercised manually against PostgreSQL.
+>
+> ## Package and file structure
+>
+> Keep controllers with the existing API layer:
+>
+> ```text
+> com.clara.challenge.watchdog.api
+> ```
+>
+> Create:
+>
+> ```text
+> src/main/java/com/clara/challenge/watchdog/api/EventController.java
+> src/main/java/com/clara/challenge/watchdog/api/TraceStatusController.java
+> ```
+>
+> Do not create another service, mapper, facade, or orchestration layer.
+>
+> ## Context path
+>
+> The application already defines the servlet context path:
+>
+> ```text
+> /api
+> ```
+>
+> Controller mappings must therefore be:
+>
+> ```text
+> /events
+> /traces/{traceId}/status
+> ```
+>
+> Do not include `/api` in controller annotations, because that would expose incorrect `/api/api/...` paths.
+>
+> The resulting public endpoints must be:
+>
+> ```text
+> POST /api/events
+> GET /api/traces/{traceId}/status
+> ```
+>
+> ## Event endpoint
+>
+> Add:
+>
+> ```text
+> POST /events
+> ```
+>
+> Requirements:
+>
+> * Accept the existing `EventRequest`.
+> * Apply Jakarta Bean Validation using `@Valid`.
+> * Delegate directly to `EventIngestionService.ingest`.
+> * Return the existing `EventIngestionResponse`.
+>
+> HTTP status:
+>
+> * newly accepted event with `duplicate = false` → `201 Created`;
+> * exact idempotent duplicate with `duplicate = true` → `200 OK`.
+>
+> Do not infer duplicate status in the controller. Use the `duplicate` value returned by the service.
+>
+> Do not add a `Location` header because the API does not define an event-resource retrieval endpoint.
+>
+> ## Trace-status endpoint
+>
+> Add:
+>
+> ```text
+> GET /traces/{traceId}/status
+> ```
+>
+> Requirements:
+>
+> * Accept `traceId` as a path variable.
+> * Delegate directly to `TraceStatusService.getStatus`.
+> * Return the existing `TraceStatusResponse`.
+> * Return `200 OK` for an existing trace.
+>
+> `TraceStatusService` already throws `WatchdogNotFoundException` for unknown traces. Let the existing `ApiExceptionHandler` translate it to `404 Not Found`.
+>
+> ## Error handling
+>
+> Controllers must not catch or translate domain exceptions.
+>
+> Continue relying on the existing global exception handler for:
+>
+> * request validation → `400 VALIDATION_ERROR`;
+> * malformed JSON, invalid enums, and invalid timestamps → `400 INVALID_REQUEST`;
+> * missing traces → `404 NOT_FOUND`;
+> * duplicate or lifecycle conflicts → `409 CONFLICT`.
+>
+> Do not expose parser details, stack traces, database errors, or internal exception names.
+>
+> Modify `ApiExceptionHandler` only if a concrete defect prevents these endpoints from returning the documented error contract.
+>
+> ## Controller responsibilities
+>
+> Controllers should contain only:
+>
+> * route definitions;
+> * request binding and validation;
+> * service delegation;
+> * HTTP success-status selection.
+>
+> Do not place in controllers:
+>
+> * duplicate comparison;
+> * metadata normalization;
+> * transaction handling;
+> * status calculation;
+> * trace-state mutation;
+> * deadline calculation;
+> * concurrency recovery;
+> * repository access.
+>
+> Use constructor injection.
+>
+> ## Scope restrictions
+>
+> Do not add:
+>
+> * new services;
+> * repository methods;
+> * JPA entity changes;
+> * DDL changes;
+> * Hurl files;
+> * broad Task 9 tests;
+> * schedulers or background jobs;
+> * new dependencies;
+> * persisted status fields.
+>
+> Do not change Task 6 or Task 7 business logic unless a concrete blocking defect is discovered.
+>
+> ## Manual API verification preparation
+>
+> After implementing the controllers, provide a concise manual verification sequence using `curl`.
+>
+> Do not execute destructive database-reset commands automatically.
+>
+> The manual sequence must cover:
+>
+> 1. health endpoint;
+> 2. first event accepted with `201`;
+> 3. status reported as `STARTED`;
+> 4. exact duplicate accepted with `200` and `duplicate = true`;
+> 5. duplicate metadata with JSON properties in a different order still accepted as exact duplicate;
+> 6. conflicting reuse of the same `eventId` returning `409`;
+> 7. event defining a next expectation;
+> 8. status reported as `WAITING_OTHER_EVENT`;
+> 9. expected final event accepted;
+> 10. status reported as `COMPLETED`;
+> 11. new event after completion returning `409`;
+> 12. unknown trace returning `404`;
+> 13. invalid request returning `400`.
+>
+> Use unique, internally consistent event and trace IDs in the commands.
+>
+> Use a sufficiently long TTL for the waiting-flow manual test so it does not expire while commands are being copied and run.
+>
+> State the expected HTTP status and important response fields after each command.
+>
+> Do not claim that the API was verified merely because the commands were generated. Manual verification remains pending until the user runs them.
+>
+> ## Before editing
+>
+> Summarize:
+>
+> 1. the exact files to create or modify;
+> 2. controller package placement;
+> 3. public and annotation-level route mappings;
+> 4. event success-status selection;
+> 5. exception-flow behavior;
+> 6. manual verification scenarios;
+> 7. any ambiguity.
+>
+> Then implement only Task 8.
+>
+> ## After editing
+>
+> Report:
+>
+> 1. files created or modified;
+> 2. route mappings;
+> 3. validation and service delegation;
+> 4. HTTP success-status behavior;
+> 5. whether any existing exception handling required correction;
+> 6. commands run;
+> 7. compilation or formatting corrections;
+> 8. unresolved risks;
+> 9. the complete manual `curl` verification sequence.
+>
+> Run:
+>
+> ```bash
+> git diff --check
+> ./mvnw -q test
+> ```
+
+### Prompt 15 — Fix Hibernate JSONB mapping with Jackson 3
+
+> Review the runtime exception from the first manual `POST /api/events` request.
+>
+> The confirmed root cause is:
+>
+> ```text
+> Could not find a FormatMapper for the JSON format
+> ```
+>
+> The application uses:
+>
+> * Spring Boot 4.0.2;
+> * Hibernate ORM 7.2.1;
+> * Jackson 3 types under `tools.jackson.*`;
+> * `TraceEvent.metadata` mapped as JSON using:
+>
+>   ```java
+>   @JdbcTypeCode(SqlTypes.JSON)
+>   private JsonNode metadata;
+>   ```
+>
+> Hibernate 7.2’s built-in Jackson integration expects Jackson 2 classes under `com.fasterxml.jackson.*`, so it does not auto-detect the Jackson 3 runtime used by Spring Boot 4.
+>
+> Implement only the smallest correction required for Hibernate JSON persistence with Jackson 3.
+>
+> ## Required implementation
+>
+> Create:
+>
+> ```text
+> src/main/java/com/clara/challenge/watchdog/config/Jackson3JsonFormatMapper.java
+> ```
+>
+> Package:
+>
+> ```java
+> com.clara.challenge.watchdog.config
+> ```
+>
+> Implement a Hibernate JSON `FormatMapper` backed by:
+>
+> ```java
+> tools.jackson.databind.json.JsonMapper
+> ```
+>
+> Prefer extending:
+>
+> ```java
+> org.hibernate.type.format.AbstractJsonFormatMapper
+> ```
+>
+> Implement the required operations:
+>
+> * serialize a value to a JSON string;
+> * deserialize a JSON string to the requested Java type;
+> * write to a Jackson 3 `JsonGenerator`;
+> * read from a Jackson 3 `JsonParser`;
+> * declare support for the Jackson 3 parser and generator source/target types.
+>
+> Use Hibernate’s provided `JavaType.getJavaType()` when constructing the corresponding Jackson type.
+>
+> A no-argument constructor must be available because Hibernate will instantiate the mapper from configuration.
+>
+> The no-argument constructor may use:
+>
+> ```java
+> JsonMapper.builder().build()
+> ```
+>
+> This application currently persists only structured `JsonNode` metadata, so no application-specific Jackson modules are required.
+>
+> ## Hibernate registration
+>
+> Register the custom mapper in the existing application configuration using:
+>
+> ```yaml
+> spring:
+>   jpa:
+>     properties:
+>       hibernate:
+>         type:
+>           json_format_mapper: com.clara.challenge.watchdog.config.Jackson3JsonFormatMapper
+> ```
+>
+> Preserve all existing JPA properties and indentation.
+>
+> Do not replace the complete `spring.jpa` configuration block accidentally.
+>
+> ## Restrictions
+>
+> Do not:
+>
+> * add Jackson 2 dependencies;
+> * add JSON-B or Yasson as an alternative serializer;
+> * override the Spring Boot-managed Hibernate version;
+> * change `TraceEvent.metadata` from structured Jackson 3 `JsonNode`;
+> * store metadata as a raw JSON string;
+> * remove `@JdbcTypeCode(SqlTypes.JSON)`;
+> * alter the DDL;
+> * alter event-ingestion business behavior;
+> * add controllers or Hurl files;
+> * mark Tasks 6–8 complete yet.
+>
+> ## Regression review
+>
+> Confirm that:
+>
+> * omitted metadata remains normalized to `{}`;
+> * object property order remains irrelevant through `JsonNode.equals`;
+> * PostgreSQL still receives a JSONB object;
+> * no Jackson 2 classes appear in source or dependencies;
+> * the custom mapper is selected by Hibernate at runtime.
+>
+> The stack trace also shows Spring Data using `merge` for the assigned `TraceEvent` identifier. Do not redesign entity newness or repository persistence in this correction unless the JSON mapper fix exposes a separate concrete failure.
+>
+> ## Before editing
+>
+> Report:
+>
+> 1. the exact files to create or modify;
+> 2. the confirmed compatibility mismatch;
+> 3. the mapper implementation strategy;
+> 4. how Hibernate will discover it;
+> 5. any ambiguity.
+>
+> Then implement only this runtime correction.
+>
+> ## After editing
+>
+> Run:
+>
+> ```bash
+> git diff --check
+> ./mvnw -q test
+> ```
+>
+> Report:
+>
+> 1. files created or modified;
+> 2. mapper methods implemented;
+> 3. Hibernate property added;
+> 4. commands run;
+> 5. unresolved risks.
+>
+> Do not claim the runtime defect is fixed until the application is restarted and the manual event request succeeds.
+
 
 ## Initial Design Decisions
 
@@ -1101,6 +1463,13 @@ So far, AI assistance has been used for:
 * Local environment setup and verification guidance.
 * Unit-test and Hurl-test strategy.
 * Documentation structure and review.
+* Transactional event-ingestion implementation and review.
+* Exact and conflicting duplicate-event handling.
+* Concurrent event and trace race-recovery design.
+* HTTP controller and response-status implementation.
+* Diagnosis of the Hibernate 7.2 and Jackson 3 JSON-mapping incompatibility.
+* Custom Hibernate `FormatMapper` implementation for Jackson 3.
+* PostgreSQL-backed manual API and JSONB verification.
 
 Implementation assistance will continue to be documented as it occurs.
 
@@ -1417,11 +1786,11 @@ Surefire result:
 11 tests, 0 failures, 0 errors
 ```
 
-Remaining verification:
+Remaining verification at that stage:
 
-* The existing Spring context test logs a PostgreSQL connection warning in the sandbox environment, but the Maven test run succeeds.
-* `TraceStatusService` is not yet exposed through HTTP.
-* Task 6 will remain pending until Tasks 7 and 8 are implemented and the public API is manually exercised.
+* The existing Spring context test logged a PostgreSQL connection warning in the sandbox environment, but the Maven test run succeeded.
+* `TraceStatusService` was not yet exposed through HTTP.
+* Task 6 remained pending until Tasks 7 and 8 were implemented and the public API was manually exercised.
 
 ### Task 7 Implementation Record
 
@@ -1472,11 +1841,92 @@ Surefire result:
 11 tests, 0 failures, 0 errors
 ```
 
-Remaining verification:
+Remaining verification at that stage:
 
-* Race-recovery paths do not yet have focused concurrency tests.
-* JSONB persistence and transaction behavior require database-backed exercise.
-* Task 7 remains pending until Task 8 exposes the ingestion API and manual testing succeeds.
+* Race-recovery paths did not yet have focused concurrency tests.
+* JSONB persistence and transaction behavior still required database-backed exercise.
+* Task 7 remained pending until Task 8 exposed the ingestion API and manual testing succeeded.
+
+### Task 8 Implementation Record
+
+Codex implemented the HTTP endpoints for event ingestion and trace-status queries.
+
+Files created:
+
+* `src/main/java/com/clara/challenge/watchdog/api/EventController.java`
+* `src/main/java/com/clara/challenge/watchdog/api/TraceStatusController.java`
+
+Implemented behavior:
+
+* Added `POST /events`, exposed publicly as `POST /api/events` through the existing servlet context path.
+* Added `GET /traces/{traceId}/status`, exposed publicly as `GET /api/traces/{traceId}/status`.
+* Applied Jakarta Bean Validation to `EventRequest` using `@Valid`.
+* Delegated event processing directly to `EventIngestionService`.
+* Returned `201 Created` for newly accepted events.
+* Returned `200 OK` for exact idempotent duplicates.
+* Delegated trace-status queries directly to `TraceStatusService`.
+* Continued using `ApiExceptionHandler` for validation, malformed input, missing traces, and business conflicts.
+* Added no repository access, transaction handling, state transitions, or duplicate comparison to the controllers.
+
+Validation performed:
+
+```bash
+git diff --check
+./mvnw -q test
+```
+
+Both commands passed.
+
+Remaining verification at that stage:
+
+* The endpoints required manual exercise against PostgreSQL.
+* Runtime JSONB serialization had not yet been exercised.
+* Manual verification and the JSONB compatibility correction are recorded below.
+
+### Tasks 6–8 Manual API Verification
+
+The trace-status calculation, transactional event ingestion, and HTTP endpoints were exercised manually against PostgreSQL.
+
+A first ingestion attempt exposed a runtime integration defect:
+
+```text
+Could not find a FormatMapper for the JSON format
+```
+
+The project uses Spring Boot 4 with Jackson 3 types under `tools.jackson.*`, while Hibernate 7.2 did not automatically discover a compatible JSON format mapper.
+
+Correction:
+
+* Added `Jackson3JsonFormatMapper`, backed by Jackson 3 `JsonMapper`.
+* Registered it through `spring.jpa.properties.hibernate.type.json_format_mapper`.
+* Did not add Jackson 2 core or databind, JSON-B, Yasson, or dependency-version overrides.
+* `jackson-annotations:2.20` remains transitively present through Jackson 3; no direct Jackson 2 dependency was introduced.
+* Preserved structured `JsonNode` metadata and PostgreSQL JSONB storage.
+
+Runtime verification confirmed:
+
+* A newly accepted event returns `201 Created` with `duplicate = false`.
+* An exact duplicate returns `200 OK` with `duplicate = true`.
+* Reordering JSON metadata object properties does not create a conflict.
+* PostgreSQL stores metadata as a JSONB object.
+* A trace without an expectation reports `STARTED`.
+* A trace with a pending expectation reports `WAITING_OTHER_EVENT`.
+* An unexpected event returns `409 Conflict` and does not mutate trace state.
+* The expected final event completes the trace.
+* A completed trace reports `COMPLETED`, clears expectation fields, and retains the correct accepted-event count.
+* A new non-duplicate event after completion returns `409 Conflict`.
+* An unknown trace returns `404 Not Found`.
+* An invalid request returns `400 Bad Request`.
+* A trace reports `TTL_EXPIRED_FOR_EVENT` after its deadline.
+* An expected event arriving after the deadline returns `409 Conflict`.
+* A rejected late event does not increment the event count or change trace state.
+
+Tasks 6, 7, and 8 were marked complete after successful manual verification.
+
+Remaining risk:
+
+* Concurrent duplicate insertion, concurrent trace creation, and optimistic-lock recovery require focused automated coverage in Task 9.
+
 
 
 ## Manual Review Responsibilities
@@ -1498,11 +1948,11 @@ All AI-assisted output will be reviewed for:
 
 ## Pending Updates
 
-This document must be updated after implementation to include:
+The remaining documentation work is:
 
-* Prompts used for unit tests.
-* Prompts used for Hurl tests.
-* AI-generated code that was accepted.
-* AI-generated code that was rejected.
-* Bugs or inconsistencies found during manual review.
-* Final corrections made before submission.
+* Record Task 9 unit-test and concurrency-test prompts and results.
+* Record Hurl scenarios and their execution results.
+* Record README and API-documentation changes.
+* Resolve and document the final decision on the partial pending-deadline index.
+* Record final clean-database and submission validation.
+* Record any defects discovered during Tasks 9–12 and their corrections.
