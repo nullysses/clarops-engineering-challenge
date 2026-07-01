@@ -63,7 +63,7 @@
 
 ## Task 5 — Implement the persistence layer
 
-**Status:** Pending
+**Status:** Complete
 
 * Create the JPA entity for `TraceState`.
 * Map `completed_at` as the completion fact.

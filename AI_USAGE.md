@@ -285,6 +285,198 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Report findings, corrections, and remaining risks.
 
+### Prompt 8 — Implement Task 5: persistence layer
+
+> Review the current `README.md`, `TASKS.md`, `AI_USAGE.md`, Task 2 DDL, and existing Task 3–4 code before editing.
+>
+> Implement only Task 5: the JPA persistence layer.
+>
+> ## Required entities
+>
+> Create JPA entities matching the existing DDL exactly:
+>
+> * `TraceState`
+> * `TraceEvent`
+>
+> Place them under:
+>
+> ```text
+> com.clara.challenge.watchdog.persistence
+> ```
+>
+> Do not rename database tables or columns unless a concrete DDL inconsistency is found.
+>
+> Both entities must use:
+>
+> ```text
+> schema = "clarops_challenge_schema"
+> ```
+>
+> ## TraceState requirements
+>
+> Map all columns currently defined in `trace_state`, including:
+>
+> * `traceId` as the natural primary key;
+> * latest accepted event fields;
+> * current expected event and deadline;
+> * `completedAt`;
+> * accepted event count;
+> * creation and update timestamps;
+> * optimistic-lock version.
+>
+> Map the DDL `version` column with `@Version`.
+>
+> Do not add a persisted mutable trace-status field or completion boolean.
+>
+> Do not implement status calculation or state-transition business logic yet.
+>
+> ## TraceEvent requirements
+>
+> Map all columns currently defined in `trace_event`, including:
+>
+> * `eventId` as the natural primary key;
+> * `traceId`;
+> * event name;
+> * event result;
+> * `occurredAt`;
+> * service `receivedAt`;
+> * optional next expected event;
+> * optional TTL;
+> * `finalEvent`;
+> * metadata.
+>
+> Map `EventResult` as a string enum.
+>
+> Map metadata as PostgreSQL `JSONB` using the Hibernate/Jackson support already available in the project. Continue using Jackson 3 types such as:
+>
+> ```java
+> tools.jackson.databind.JsonNode
+> ```
+>
+> Do not add a new JSON library or persistence dependency.
+>
+> Preserve structured JSON semantics so object-field order does not affect later duplicate comparison.
+>
+> ## Entity design
+>
+> * Keep API records separate from JPA entities.
+> * Avoid Lombok `@Data`.
+> * Avoid public setters for every field unless JPA or the planned service requires them.
+> * Provide a protected no-argument constructor for JPA.
+> * Provide explicit constructors or factory methods sufficient for later service implementation.
+> * Do not place HTTP behavior, validation responses, status calculation, or transaction orchestration inside entities.
+> * Do not create bidirectional entity relationships unless they provide clear value.
+>
+> Prefer storing `traceId` directly on `TraceEvent` rather than introducing a mandatory object relationship that could complicate insertion ordering or serialization. The database foreign key remains authoritative.
+>
+> ## Required repositories
+>
+> Create:
+>
+> * `TraceStateRepository`
+> * `TraceEventRepository`
+>
+> Use Spring Data JPA.
+>
+> The repositories must support:
+>
+> * lookup of a trace by `traceId`;
+> * lookup of an event by `eventId`;
+> * ordered event-history lookup by `traceId` only if it is directly useful and matches the existing index.
+>
+> Do not create custom SQL, locking queries, or retry behavior yet unless required for correct basic mapping.
+>
+> `JpaRepository.findById` is sufficient for natural-key lookup; do not add redundant repository methods solely to rename it.
+>
+> ## Consistency requirements
+>
+> Confirm that entity nullability, lengths, enum representation, timestamps, JSON mapping, and column names agree with the existing SQL.
+>
+> Do not depend on Hibernate schema generation. The project must continue using:
+>
+> ```yaml
+> spring.jpa.hibernate.ddl-auto: none
+> ```
+>
+> Do not modify the DDL unless a real mismatch is found. If one is found, report it before changing either side.
+>
+> ## Scope restrictions
+>
+> Do not add:
+>
+> * controllers;
+> * ingestion services;
+> * status services;
+> * `Clock` configuration;
+> * transaction orchestration;
+> * duplicate-comparison business logic;
+> * optimistic-lock retry handling;
+> * exception translation;
+> * unit tests;
+> * Hurl files;
+> * new dependencies.
+>
+> Do not mark Task 5 complete in `TASKS.md`; report the result for manual review first.
+>
+> ## Before editing
+>
+> Summarize:
+>
+> 1. the exact entity and repository files to create;
+> 2. how each entity maps to the existing DDL;
+> 3. the proposed JSONB mapping;
+> 4. whether any DDL/entity inconsistency exists;
+> 5. any persistence-design ambiguity.
+>
+> Then implement only Task 5.
+>
+> ## After editing
+>
+> Report:
+>
+> 1. files created or modified;
+> 2. entity mappings and repository interfaces added;
+> 3. JSONB and enum mapping decisions;
+> 4. commands run;
+> 5. compilation or formatting corrections;
+> 6. unresolved issues or mappings that require manual review.
+>
+> Run at minimum:
+>
+> ```bash
+> git diff --check
+> ./mvnw -q -DskipTests compile
+> ```
+
+### Prompt 9 — Review and correct Task 5
+
+> Review only the Task 5 persistence changes.
+>
+> Verify:
+>
+> * every entity column exactly matches the DDL name, length, nullability, and type;
+> * `TraceState.version` uses `@Version`;
+> * `TraceEvent.result` uses `EnumType.STRING`;
+> * JSONB uses Jackson 3 `JsonNode` and Hibernate JSON mapping correctly;
+> * no mutable status column or completion boolean exists;
+> * no bidirectional JPA relationship was introduced;
+> * entity constructors and mutation methods do not implement business transition rules;
+> * protected no-argument constructors exist for JPA;
+> * equality/hash-code methods do not include mutable entity state;
+> * metadata cannot reach PostgreSQL as null, or the responsibility for normalization is explicitly deferred to Task 7;
+> * repository methods are valid Spring Data derived queries;
+> * no out-of-scope code or dependency was added.
+>
+> Make corrections only for concrete defects.
+>
+> Run:
+>
+> ```bash
+> git diff --check
+> ./mvnw -q -DskipTests compile
+> ```
+>
+> Report findings, corrections, and remaining persistence risks.
 
 ## AI-Assisted Areas
 
@@ -547,6 +739,53 @@ git diff --check
 ```
 
 Both commands passed.
+
+## Task 5 Implementation Record
+
+Codex implemented the JPA persistence layer for the watchdog service.
+
+Generated changes:
+
+* Added `TraceState`.
+* Added `TraceEvent`.
+* Added `TraceStateRepository`.
+* Added `TraceEventRepository`.
+* Mapped all entity fields explicitly to the Task 2 DDL.
+* Mapped optimistic locking with `@Version`.
+* Mapped `EventResult` using `EnumType.STRING`.
+* Mapped metadata as PostgreSQL `JSONB` using Jackson 3 `JsonNode` and Hibernate JSON support.
+* Added ordered trace-history lookup by `traceId` and `receivedAt`.
+
+Accepted decisions:
+
+* Natural string identifiers are used as entity primary keys.
+* `TraceEvent` stores `traceId` directly rather than using a bidirectional JPA relationship.
+* Entities contain only mechanical persistence mutations and no lifecycle-transition logic.
+* No persisted status field or completion boolean was introduced.
+
+Manual review and correction:
+
+* Entity mappings were checked against the DDL for column names, lengths, nullability, and types.
+* Confirmed that entity constructors and mutation methods do not contain business transition rules.
+* Confirmed that no equality or hash-code implementation depends on mutable entity state.
+* Fixed a mismatch where `TraceEvent.metadata` could be null in Java despite being `NOT NULL` in PostgreSQL.
+* `TraceEvent` now rejects null metadata using `Objects.requireNonNull`.
+* Task 7 must normalize omitted request metadata to an empty JSON object before constructing the entity.
+
+Validation performed:
+
+```bash
+git diff --check
+./mvnw -q -DskipTests compile
+```
+
+Both commands passed.
+
+Remaining verification:
+
+* JSONB persistence must be exercised through a database-backed flow.
+* Metadata normalization remains part of Task 7.
+
 
 ## Manual Review Responsibilities
 
