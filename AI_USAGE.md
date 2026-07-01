@@ -150,7 +150,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Implement only Task 4: request validation and API error handling.
 >
-> ## Required validation
+> #### Required validation
 >
 > Add Bean Validation constraints to `EventRequest`:
 >
@@ -169,7 +169,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Preserve the existing behavior where omitted `finalEvent` becomes `false`.
 >
-> ## Cross-field validation
+> #### Cross-field validation
 >
 > Prefer a small, explicit solution.
 >
@@ -177,7 +177,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Do not put service or persistence behavior in validation code.
 >
-> ## Exceptions
+> #### Exceptions
 >
 > Define minimal exceptions that later tasks can reuse:
 >
@@ -188,7 +188,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Do not implement the business conditions that throw these exceptions yet.
 >
-> ## Global exception handling
+> #### Global exception handling
 >
 > Add a `@RestControllerAdvice` that returns the existing `ApiErrorResponse`.
 >
@@ -211,7 +211,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Do not expose stack traces, internal exception class names, SQL details, or raw Jackson parser messages.
 >
-> ## Scope restrictions
+> #### Scope restrictions
 >
 > Do not add:
 >
@@ -229,7 +229,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Continue using Jackson 3 types already resolved by the project, including `tools.jackson.databind.JsonNode`.
 >
-> ## Before editing
+> #### Before editing
 >
 > Summarize:
 >
@@ -240,7 +240,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Then implement only Task 4.
 >
-> ## After editing
+> #### After editing
 >
 > Report:
 >
@@ -291,7 +291,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Implement only Task 5: the JPA persistence layer.
 >
-> ## Required entities
+> #### Required entities
 >
 > Create JPA entities matching the existing DDL exactly:
 >
@@ -312,7 +312,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 > schema = "clarops_challenge_schema"
 > ```
 >
-> ## TraceState requirements
+> #### TraceState requirements
 >
 > Map all columns currently defined in `trace_state`, including:
 >
@@ -330,7 +330,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Do not implement status calculation or state-transition business logic yet.
 >
-> ## TraceEvent requirements
+> #### TraceEvent requirements
 >
 > Map all columns currently defined in `trace_event`, including:
 >
@@ -357,7 +357,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Preserve structured JSON semantics so object-field order does not affect later duplicate comparison.
 >
-> ## Entity design
+> #### Entity design
 >
 > * Keep API records separate from JPA entities.
 > * Avoid Lombok `@Data`.
@@ -369,7 +369,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Prefer storing `traceId` directly on `TraceEvent` rather than introducing a mandatory object relationship that could complicate insertion ordering or serialization. The database foreign key remains authoritative.
 >
-> ## Required repositories
+> #### Required repositories
 >
 > Create:
 >
@@ -388,7 +388,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > `JpaRepository.findById` is sufficient for natural-key lookup; do not add redundant repository methods solely to rename it.
 >
-> ## Consistency requirements
+> #### Consistency requirements
 >
 > Confirm that entity nullability, lengths, enum representation, timestamps, JSON mapping, and column names agree with the existing SQL.
 >
@@ -400,7 +400,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Do not modify the DDL unless a real mismatch is found. If one is found, report it before changing either side.
 >
-> ## Scope restrictions
+> #### Scope restrictions
 >
 > Do not add:
 >
@@ -418,7 +418,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Do not mark Task 5 complete in `TASKS.md`; report the result for manual review first.
 >
-> ## Before editing
+> #### Before editing
 >
 > Summarize:
 >
@@ -430,7 +430,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Then implement only Task 5.
 >
-> ## After editing
+> #### After editing
 >
 > Report:
 >
@@ -486,7 +486,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Do not mark Task 6 complete in `TASKS.md`. The implementation will be reviewed now, but final completion will remain pending until the public API can be exercised manually after Tasks 7 and 8.
 >
-> ## Required configuration
+> #### Required configuration
 >
 > Add a Spring bean that provides:
 >
@@ -506,7 +506,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Do not modify error-response timestamp handling unless it is directly necessary for Task 6.
 >
-> ## Required domain calculation
+> #### Required domain calculation
 >
 > Create a small Spring-independent component responsible for calculating `TraceStatus` from persisted trace facts and a supplied current time.
 >
@@ -537,7 +537,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Prefer the option that keeps the domain component easy to unit-test without excessive argument lists or unnecessary DTOs.
 >
-> ## Status rules
+> #### Status rules
 >
 > Apply these rules in this precedence order:
 >
@@ -565,7 +565,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Do not persist expiration or modify the trace when calculating status.
 >
-> ## Status query service
+> #### Status query service
 >
 > Add the smallest service needed to retrieve and calculate the current status of a trace.
 >
@@ -603,7 +603,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 > com.clara.challenge.watchdog.service
 > ```
 >
-> ## Unit tests for the calculator
+> #### Unit tests for the calculator
 >
 > Although the larger unit-test task is Task 9, Task 6 includes tests directly required to verify this isolated status calculation.
 >
@@ -627,7 +627,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > A small service unit test for unknown traces and response mapping is acceptable if it remains focused. Do not add database integration tests or controller tests yet.
 >
-> ## Invalid persisted-state handling
+> #### Invalid persisted-state handling
 >
 > The database constraints guarantee that expectation name and deadline are paired.
 >
@@ -635,7 +635,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Use a clear `IllegalArgumentException` or `IllegalStateException`. Do not introduce a public HTTP error contract for corrupted persisted state.
 >
-> ## Scope restrictions
+> #### Scope restrictions
 >
 > Do not add:
 >
@@ -653,7 +653,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Do not modify Task 5 persistence mappings unless a concrete defect blocks Task 6.
 >
-> ## Before editing
+> #### Before editing
 >
 > Summarize:
 >
@@ -667,7 +667,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Then implement only Task 6.
 >
-> ## After editing
+> #### After editing
 >
 > Report:
 >
@@ -729,7 +729,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Do not mark Task 7 complete in `TASKS.md`. It will remain pending until Task 8 exposes the public endpoints and the API is manually exercised.
 >
-> ## Exact file scope
+> #### Exact file scope
 >
 > Create only:
 >
@@ -745,7 +745,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > You may modify `TraceState` only if a small mechanical persistence mutation is genuinely required. Do not move lifecycle rules into the entity.
 >
-> ## Public API
+> #### Public API
 >
 > Add:
 >
@@ -760,7 +760,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Do not add a controller yet.
 >
-> ## Transaction structure
+> #### Transaction structure
 >
 > Inject the existing repositories, UTC `Clock`, and Spring transaction manager or `TransactionTemplate`.
 >
@@ -780,7 +780,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Do not catch a constraint exception and continue inside the same transaction. Avoid self-invocation-based `@Transactional` methods.
 >
-> ## Metadata normalization
+> #### Metadata normalization
 >
 > Normalize omitted metadata to an empty Jackson 3 object node before persistence and duplicate comparison.
 >
@@ -788,7 +788,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Do not compare raw serialized JSON strings. `TraceEvent` must never receive null metadata.
 >
-> ## Duplicate handling
+> #### Duplicate handling
 >
 > In every transactional attempt, look up `TraceEvent` by `eventId` before reading or mutating `TraceState`.
 >
@@ -816,7 +816,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Keep the comparison as a small private method in `EventIngestionService`; do not create a separate mapper or comparator class for this MVP.
 >
-> ## First event
+> #### First event
 >
 > When no trace exists:
 >
@@ -831,7 +831,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Both writes must remain in the same transaction.
 >
-> ## Existing trace
+> #### Existing trace
 >
 > Before applying business rules, verify that `nextExpectedEvent` and `nextExpectedBefore` are either both present or both absent. Throw `IllegalStateException` for a half-paired persisted state.
 >
@@ -859,7 +859,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Flush before returning success so optimistic-lock and uniqueness failures are observed inside the transaction.
 >
-> ## Concurrency recovery
+> #### Concurrency recovery
 >
 > Existing trace updates rely on `@Version`. Translate `OptimisticLockingFailureException` to `WatchdogConflictException`.
 >
@@ -873,7 +873,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Do not parse PostgreSQL error-message text. Do not convert unrelated integrity failures into `409 Conflict`. Do not use unbounded retries.
 >
-> ## Scope restrictions
+> #### Scope restrictions
 >
 > Do not add:
 >
@@ -889,7 +889,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Do not modify Task 6 unless a concrete blocking defect is discovered.
 >
-> ## Before editing
+> #### Before editing
 >
 > Summarize:
 >
@@ -905,7 +905,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Then implement only Task 7.
 >
-> ## After editing
+> #### After editing
 >
 > Report:
 >
@@ -935,7 +935,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Do not add controllers, Hurl files, DDL changes, broad unit tests, or new dependencies.
 >
-> ## Transaction review
+> #### Transaction review
 >
 > Verify that:
 >
@@ -945,7 +945,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 > * database exceptions are handled only after the failed transaction has rolled back;
 > * no repository read is used to recover from an exception while still inside the failed transaction.
 >
-> ## Duplicate handling
+> #### Duplicate handling
 >
 > Verify that duplicate lookup occurs before trace-state inspection or mutation.
 >
@@ -965,7 +965,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Confirm that omitted metadata and `{}` are equivalent and that structured `JsonNode.equals` is used.
 >
-> ## Optimistic-lock race correction
+> #### Optimistic-lock race correction
 >
 > Do not immediately translate every optimistic-lock failure to `WatchdogConflictException`.
 >
@@ -985,7 +985,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > This is required because two identical concurrent requests can race on the same trace version, with one committing and the other failing optimistic locking before observing the committed `eventId`.
 >
-> ## Integrity-violation recovery
+> #### Integrity-violation recovery
 >
 > Verify that after `DataIntegrityViolationException` rollback:
 >
@@ -1000,7 +1000,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Do not parse PostgreSQL error-message text.
 >
-> ## State-transition review
+> #### State-transition review
 >
 > Verify this order for existing traces:
 >
@@ -1021,7 +1021,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 > * `result = ERROR` has no independent lifecycle effect;
 > * explicit flush occurs before successful return so optimistic-lock failures are observable.
 >
-> ## Scope and maintainability
+> #### Scope and maintainability
 >
 > Check that:
 >
@@ -1064,7 +1064,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 > Do not mark Tasks 6, 7, or 8 complete in `TASKS.md`. They will remain pending until the endpoints are exercised manually against PostgreSQL.
 >
-> ## Package and file structure
+> #### Package and file structure
 >
 > Keep controllers with the existing API layer:
 >
@@ -1081,7 +1081,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 > Do not create another service, mapper, facade, or orchestration layer.
 >
-> ## Context path
+> #### Context path
 >
 > The application already defines the servlet context path:
 >
@@ -1105,7 +1105,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 > GET /api/traces/{traceId}/status
 > ```
 >
-> ## Event endpoint
+> #### Event endpoint
 >
 > Add:
 >
@@ -1129,7 +1129,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 > Do not add a `Location` header because the API does not define an event-resource retrieval endpoint.
 >
-> ## Trace-status endpoint
+> #### Trace-status endpoint
 >
 > Add:
 >
@@ -1146,7 +1146,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 > `TraceStatusService` already throws `WatchdogNotFoundException` for unknown traces. Let the existing `ApiExceptionHandler` translate it to `404 Not Found`.
 >
-> ## Error handling
+> #### Error handling
 >
 > Controllers must not catch or translate domain exceptions.
 >
@@ -1161,7 +1161,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 > Modify `ApiExceptionHandler` only if a concrete defect prevents these endpoints from returning the documented error contract.
 >
-> ## Controller responsibilities
+> #### Controller responsibilities
 >
 > Controllers should contain only:
 >
@@ -1183,7 +1183,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 > Use constructor injection.
 >
-> ## Scope restrictions
+> #### Scope restrictions
 >
 > Do not add:
 >
@@ -1199,7 +1199,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 > Do not change Task 6 or Task 7 business logic unless a concrete blocking defect is discovered.
 >
-> ## Manual API verification preparation
+> #### Manual API verification preparation
 >
 > After implementing the controllers, provide a concise manual verification sequence using `curl`.
 >
@@ -1229,7 +1229,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 > Do not claim that the API was verified merely because the commands were generated. Manual verification remains pending until the user runs them.
 >
-> ## Before editing
+> #### Before editing
 >
 > Summarize:
 >
@@ -1243,7 +1243,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 > Then implement only Task 8.
 >
-> ## After editing
+> #### After editing
 >
 > Report:
 >
@@ -1290,7 +1290,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 > Implement only the smallest correction required for Hibernate JSON persistence with Jackson 3.
 >
-> ## Required implementation
+> #### Required implementation
 >
 > Create:
 >
@@ -1336,7 +1336,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 > This application currently persists only structured `JsonNode` metadata, so no application-specific Jackson modules are required.
 >
-> ## Hibernate registration
+> #### Hibernate registration
 >
 > Register the custom mapper in the existing application configuration using:
 >
@@ -1353,7 +1353,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 > Do not replace the complete `spring.jpa` configuration block accidentally.
 >
-> ## Restrictions
+> #### Restrictions
 >
 > Do not:
 >
@@ -1368,7 +1368,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 > * add controllers or Hurl files;
 > * mark Tasks 6–8 complete yet.
 >
-> ## Regression review
+> #### Regression review
 >
 > Confirm that:
 >
@@ -1380,7 +1380,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 > The stack trace also shows Spring Data using `merge` for the assigned `TraceEvent` identifier. Do not redesign entity newness or repository persistence in this correction unless the JSON mapper fix exposes a separate concrete failure.
 >
-> ## Before editing
+> #### Before editing
 >
 > Report:
 >
@@ -1392,7 +1392,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 > Then implement only this runtime correction.
 >
-> ## After editing
+> #### After editing
 >
 > Run:
 >
@@ -1411,6 +1411,618 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 > Do not claim the runtime defect is fixed until the application is restarted and the manual event request succeeds.
 
+### Prompt 16 — Implement Task 9: focused unit tests
+
+>
+> Review the current `README.md`, `TASKS.md`, `AI_USAGE.md`, API contracts, persistence entities, repositories, `TraceStatusCalculator`, `TraceStatusService`, and `EventIngestionService` before editing.
+>
+> Implement only Task 9: focused unit tests for the watchdog domain and service behavior.
+>
+> Do not mark Task 9 complete in `TASKS.md`. The tests will be reviewed before the task is closed.
+>
+> #### Existing coverage
+>
+> `TraceStatusCalculatorTest` already covers:
+>
+> * completed status;
+> * completion precedence over a paired stale expectation;
+> * active trace without an expectation;
+> * waiting before the deadline;
+> * expiration exactly at the deadline;
+> * expiration after the deadline;
+> * half-paired expectation states.
+>
+> Do not duplicate those tests unless a concrete coverage defect is found.
+>
+> The primary target for Task 9 is:
+>
+> ```text
+> src/main/java/com/clara/challenge/watchdog/service/EventIngestionService.java
+> ```
+>
+> Create:
+>
+> ```text
+> src/test/java/com/clara/challenge/watchdog/service/EventIngestionServiceTest.java
+> ```
+>
+> A small `TraceStatusServiceTest` may also be added if it provides focused coverage for repository lookup and response mapping.
+>
+> #### Testing approach
+>
+> Use:
+>
+> * JUnit 5;
+> * Mockito;
+> * a fixed or explicitly controlled `Clock`;
+> * mocked repositories;
+> * a mocked `PlatformTransactionManager`;
+> * real `TraceState` and `TraceEvent` instances when inspecting state transitions is clearer than mocking entities;
+> * `ArgumentCaptor` where useful for inspecting persisted state and event history.
+>
+> Do not load a Spring application context for service unit tests.
+>
+> Do not use:
+>
+> * Testcontainers;
+> * H2;
+> * PostgreSQL integration tests;
+> * `@SpringBootTest`;
+> * `@DataJpaTest`;
+> * MockMvc;
+> * controller tests;
+> * Hurl;
+> * sleeps or real-time waiting;
+> * reflection to invoke private methods;
+> * new production dependencies.
+>
+> The existing `spring-boot-starter-test` dependency already supplies the required test libraries.
+>
+> #### Transaction test setup
+>
+> `EventIngestionService` creates its own `TransactionTemplate` from the injected `PlatformTransactionManager`.
+>
+> Configure the mocked transaction manager so `TransactionTemplate` can execute normally:
+>
+> * `getTransaction(...)` returns a usable `TransactionStatus`, such as `SimpleTransactionStatus`;
+> * commit and rollback operations remain observable no-ops.
+>
+> Do not bypass `TransactionTemplate` or invoke private methods directly.
+>
+> Tests should exercise behavior through:
+>
+> ```java
+> EventIngestionResponse ingest(EventRequest request)
+> ```
+>
+> #### Required normal-ingestion scenarios
+>
+> Add focused tests covering:
+>
+> 1. A first event creates and persists `TraceState` and `TraceEvent`.
+>
+> 2. A first non-final event without another expectation:
+>
+>    * returns `duplicate = false`;
+>    * sets `eventsReceived = 1`;
+>    * leaves `completedAt` null;
+>    * leaves expectation fields null;
+>    * uses the server acceptance time for created, updated, and received timestamps.
+>
+> 3. A first event defining another expectation:
+>
+>    * stores the expected event name;
+>    * calculates the deadline from `receivedAt + nextEventTtlSeconds`;
+>    * does not calculate the deadline from client-provided `occurredAt`.
+>
+> 4. A first final event:
+>
+>    * sets `completedAt` to `receivedAt`;
+>    * clears expectation fields;
+>    * persists final-event history.
+>
+> 5. An accepted expected event on an existing trace:
+>
+>    * updates all latest-event fields;
+>    * increments `eventsReceived`;
+>    * persists one history event;
+>    * applies the new expectation, completion, or no-expectation outcome from the new request.
+>
+> 6. An event with `result = ERROR` follows the same lifecycle rules as a successful event.
+>
+> #### Required duplicate scenarios
+>
+> Add focused tests covering:
+>
+> 1. An exact duplicate:
+>
+>    * returns `duplicate = true`;
+>    * does not read or mutate trace state;
+>    * does not save or flush new history.
+>
+> 2. Reusing an `eventId` with changed logical content throws `WatchdogConflictException`.
+>
+> 3. Omitted metadata and `{}` are logically equivalent.
+>
+> 4. JSON object field order does not affect duplicate equality.
+>
+> 5. `receivedAt` is excluded from duplicate comparison.
+>
+> 6. Exact duplicates remain idempotent when the associated trace is completed or expired, because event lookup occurs before lifecycle checks.
+>
+> #### Required rejection scenarios
+>
+> Add focused tests covering:
+>
+> 1. An unexpected event name throws `WatchdogConflictException`.
+>
+> 2. An expected event arriving exactly at the deadline is rejected.
+>
+> 3. An expected event arriving after the deadline is rejected.
+>
+> 4. A new non-duplicate event after completion is rejected.
+>
+> 5. A half-paired persisted expectation throws `IllegalStateException`.
+>
+> For each rejected event, verify that:
+>
+> * no new event history is saved;
+> * the accepted-event counter is unchanged;
+> * latest-event and expectation fields remain unchanged;
+> * no successful flush is reported.
+>
+> #### Required optimistic-lock recovery scenarios
+>
+> Exercise the public `ingest` method and simulate an optimistic-lock failure from the transactional attempt.
+>
+> Cover:
+>
+> 1. After rollback, a matching event now exists:
+>
+>    * return an idempotent duplicate response.
+>
+> 2. After rollback, the same `eventId` exists with different logical content:
+>
+>    * throw `WatchdogConflictException`.
+>
+> 3. After rollback, the event remains absent:
+>
+>    * throw the trace-concurrency `WatchdogConflictException`;
+>    * do not report the event as accepted.
+>
+> Verify that recovery reads occur only after the failed transaction has rolled back.
+>
+> #### Required integrity-violation recovery scenarios
+>
+> Simulate `DataIntegrityViolationException` from a failed transactional attempt.
+>
+> Cover:
+>
+> 1. A matching event now exists after rollback:
+>
+>    * return an idempotent duplicate response.
+>
+> 2. A conflicting event now exists after rollback:
+>
+>    * throw `WatchdogConflictException`.
+>
+> 3. The failed attempt was creating a trace, the event remains absent, and the trace now exists:
+>
+>    * retry ingestion exactly once;
+>    * reuse the same public-call `receivedAt`;
+>    * accept the event when the retry succeeds.
+>
+> 4. The retry encounters an optimistic-lock failure and a matching event is then visible:
+>
+>    * return an idempotent duplicate response.
+>
+> 5. The retry encounters another unexplained integrity violation and no event exists:
+>
+>    * propagate that integrity violation;
+>    * do not convert it into a business conflict.
+>
+> 6. An integrity violation unrelated to concurrent trace creation:
+>
+>    * propagates unchanged;
+>    * does not trigger an ingestion retry.
+>
+> Do not test PostgreSQL exception-message parsing because the implementation intentionally does not parse database messages.
+>
+> #### Timestamp requirements
+>
+> Verify that one acceptance timestamp is captured per public `ingest` call and reused for:
+>
+> * trace creation;
+> * trace update;
+> * event history;
+> * deadline calculation;
+> * completion;
+> * the bounded trace-creation retry.
+>
+> A controlled or mocked `Clock` may be used to verify that the clock is read once per public call.
+>
+> #### Optional TraceStatusService tests
+>
+> If added, keep them limited to:
+>
+> * unknown trace throws `WatchdogNotFoundException`;
+> * an existing trace is mapped completely into `TraceStatusResponse`;
+> * the service supplies `Instant.now(clock)` to the calculator.
+>
+> Do not duplicate the calculator’s status-rule matrix.
+>
+> #### Test quality requirements
+>
+> * Follow the naming form `shouldExpectedBehavior_WhenCondition`.
+> * Use Arrange / Act / Assert.
+> * Test one business rule per test.
+> * Avoid broad tests with many unrelated assertions.
+> * Prefer exact interaction verification for rejected and duplicate paths.
+> * Avoid testing private implementation details unless required to prove transaction recovery occurs after rollback.
+> * Use helper methods only to remove repetitive fixture construction.
+> * Keep fixture names and timestamps explicit.
+> * Do not weaken production visibility solely for testing.
+>
+> #### Scope restrictions
+>
+> Do not modify:
+>
+> * controllers;
+> * API contracts;
+> * DDL;
+> * application configuration;
+> * repositories;
+> * JPA mappings;
+> * Hurl files;
+> * `README.md`;
+> * `TASKS.md`;
+> * `AI_USAGE.md`.
+>
+> Do not change production code unless a concrete correctness or testability defect prevents valid unit testing. Report such a defect before making the change.
+>
+> #### Before editing
+>
+> Report:
+>
+> 1. the exact test files to create or modify;
+> 2. the transaction-manager test strategy;
+> 3. the normal-ingestion scenarios;
+> 4. the duplicate and rejection scenarios;
+> 5. the optimistic-lock recovery scenarios;
+> 6. the integrity-violation recovery scenarios;
+> 7. how timestamp reuse will be verified;
+> 8. any ambiguity or production-code testability concern.
+>
+> Then implement only Task 9.
+>
+> #### After editing
+>
+> Run:
+>
+> ```bash
+> git diff --check
+> ./mvnw -q test
+> ```
+>
+> Report:
+>
+> 1. files created or modified;
+> 2. tests added, grouped by behavior;
+> 3. transaction and rollback-recovery coverage;
+> 4. timestamp verification;
+> 5. commands run;
+> 6. test count and results;
+> 7. any production defect discovered;
+> 8. remaining untested risk.
+>
+> Do not mark Task 9 complete yet.
+
+### Prompt 17 — Review and correct Task 9 unit tests
+
+>
+> Review only the Task 9 changes in:
+>
+> ```text
+> src/test/java/com/clara/challenge/watchdog/service/EventIngestionServiceTest.java
+> ```
+>
+> Do not add integration tests, controller tests, Hurl files, dependencies, or production changes unless a concrete production defect is exposed.
+>
+> Do not mark Task 9 complete yet.
+>
+> #### General test-quality review
+>
+> Verify that:
+>
+> * all tests exercise behavior through `EventIngestionService.ingest`;
+> * no private method is invoked through reflection;
+> * no Spring application context is loaded;
+> * no database, H2, Testcontainers, sleep, or real-time waiting is used;
+> * tests follow `shouldExpectedBehavior_WhenCondition`;
+> * Arrange / Act / Assert is clear;
+> * each test covers one primary business rule;
+> * helpers remove repetition without hiding the scenario;
+> * assertions test externally meaningful state and interactions rather than incidental implementation details;
+> * Mockito interaction verification is not unnecessarily brittle.
+>
+> Remove or simplify duplicate tests only when they genuinely prove the same behavior through the same path.
+>
+> #### Transaction manager setup
+>
+> Verify that the mocked `PlatformTransactionManager` is configured correctly:
+>
+> * every `getTransaction(...)` call returns a fresh `SimpleTransactionStatus`;
+> * `commit(...)` and `rollback(...)` are observable no-ops;
+> * exceptions are thrown from repository persistence or flush operations inside the transaction callback, not from `getTransaction(...)`;
+> * tests do not bypass the real `TransactionTemplate`;
+> * normal and exact-duplicate transactions commit;
+> * failed transactions roll back before any recovery read occurs.
+>
+> For rollback-order tests, confirm the exact relevant sequence using `InOrder` or an equivalent assertion:
+>
+> ```text
+> initial transaction begins
+> initial repository operation fails
+> rollback occurs
+> recovery transaction begins
+> recovery repository read occurs
+> ```
+>
+> Do not require irrelevant interactions between those operations.
+>
+> #### Normal-ingestion review
+>
+> Verify that tests correctly account for the actual first-event write behavior:
+>
+> 1. `createTraceState` calls `TraceStateRepository.saveAndFlush`;
+> 2. event history is saved;
+> 3. `flushAcceptedEvent` calls `TraceStateRepository.saveAndFlush` again;
+> 4. event history is flushed.
+>
+> Do not incorrectly assert that first-event state is saved only once.
+>
+> Confirm separate focused tests exist for:
+>
+> * first event without expectation;
+> * first event defining an expectation;
+> * first final event;
+> * existing expected event defining another expectation;
+> * existing expected final event;
+> * existing expected event clearing the previous expectation without completing;
+> * `result = ERROR` following normal lifecycle behavior.
+>
+> Verify that tests inspect:
+>
+> * latest-event fields;
+> * accepted-event count;
+> * created and updated timestamps;
+> * received timestamp;
+> * completion timestamp;
+> * expectation fields;
+> * deadline calculation from server `receivedAt`, not client `occurredAt`;
+> * persisted event-history fields.
+>
+> #### Duplicate review
+>
+> Verify that exact duplicate tests prove:
+>
+> * lookup by `eventId` occurs before trace lookup;
+> * `duplicate = true` is returned;
+> * no trace lookup occurs;
+> * no trace mutation occurs;
+> * no event is saved;
+> * no successful persistence flush occurs;
+> * the transaction may still commit normally.
+>
+> Verify distinct coverage for:
+>
+> * changed logical content;
+> * omitted metadata versus `{}`;
+> * reordered JSON object properties;
+> * different persisted `receivedAt`;
+> * completed trace;
+> * expired trace.
+>
+> Ensure the completed and expired duplicate tests do not accidentally depend on lifecycle inspection; verify that trace state is never read.
+>
+> #### Business-rejection review
+>
+> Verify focused tests for:
+>
+> * unexpected event name;
+> * event exactly at the deadline;
+> * event after the deadline;
+> * event after completion;
+> * expected-event name without deadline;
+> * deadline without expected-event name.
+>
+> For these paths, verify:
+>
+> * no history event is saved;
+> * no successful flush occurs;
+> * counters and latest-event facts are unchanged;
+> * expectation fields are unchanged.
+>
+> State immutability assertions are appropriate for these business rejections because rejection occurs before mutation.
+>
+> Do not assert in-memory entity reversion after an optimistic-lock failure; mocked repositories do not reproduce persistence-context rollback semantics.
+>
+> #### Optimistic-lock recovery review
+>
+> Verify that optimistic-lock failures are raised from an operation inside the initial transaction.
+>
+> Confirm coverage for:
+>
+> 1. matching event visible after rollback:
+>
+>    * returns an exact duplicate;
+>
+> 2. conflicting event visible after rollback:
+>
+>    * throws `WatchdogConflictException`;
+>
+> 3. event absent after rollback:
+>
+>    * throws the trace-concurrency `WatchdogConflictException`.
+>
+> Verify:
+>
+> * rollback precedes the recovery event lookup;
+> * the recovery lookup occurs in a new transaction;
+> * a matching event may have a different `receivedAt`;
+> * absent-event recovery does not report a successful ingestion;
+> * tests do not expect the mutated Java fixture to be reverted after rollback.
+>
+> #### Integrity-violation recovery review
+>
+> Review sequential Mockito stubbing carefully.
+>
+> ### Concurrent event insertion
+>
+> Verify:
+>
+> * initial event lookup is absent;
+> * the transactional persistence operation throws `DataIntegrityViolationException`;
+> * rollback occurs;
+> * recovery event lookup returns matching or conflicting history;
+> * matching content returns duplicate;
+> * conflicting content throws conflict.
+>
+> ### Concurrent trace creation retry
+>
+> Verify the sequence:
+>
+> ```text
+> initial event lookup: absent
+> initial trace lookup: absent
+> trace creation attempted
+> persistence operation: integrity violation
+> rollback
+> recovery event lookup: absent
+> recovery trace-exists lookup: true
+> retry event lookup: absent
+> retry trace lookup: existing trace
+> retry succeeds
+> ```
+>
+> Confirm:
+>
+> * retry occurs exactly once;
+> * the same public-call `receivedAt` is reused;
+> * the clock is not read again;
+> * the retry updates the existing trace rather than attempting another new trace creation.
+>
+> ### Retry optimistic-lock recovery
+>
+> Verify:
+>
+> ```text
+> initial trace-creation attempt fails with integrity violation
+> recovery determines the trace now exists
+> retry fails with optimistic locking
+> retry transaction rolls back
+> matching event becomes visible
+> duplicate response is returned
+> ```
+>
+> Ensure each repeated `findById` call has the intended sequential result.
+>
+> ### Retry integrity propagation
+>
+> Verify that:
+>
+> * the retry’s second unexplained `DataIntegrityViolationException` is the exception propagated;
+> * the service performs its final event lookup;
+> * no matching event exists;
+> * the exception is not translated into `WatchdogConflictException`;
+> * no third ingestion attempt occurs.
+>
+> ### Unrelated integrity failure
+>
+> Verify that:
+>
+> * recovery still performs the required post-rollback event lookup;
+> * the failed attempt did not attempt trace creation;
+> * `TraceStateRepository.existsById` is not invoked;
+> * no retry occurs;
+> * the original integrity exception is propagated unchanged.
+>
+> #### Timestamp review
+>
+> Verify that timestamp-sensitive tests use a controlled `Clock`.
+>
+> Confirm one clock read per public `ingest` call and reuse of that value for:
+>
+> * first-trace timestamps;
+> * existing-trace update timestamp;
+> * event history `receivedAt`;
+> * deadline calculation;
+> * completion;
+> * trace-creation retry.
+>
+> Avoid asserting a specific internal Clock method unless that is necessary. The behavioral requirement is one acceptance instant per public call.
+>
+> #### Assertion and fixture review
+>
+> Check that:
+>
+> * captured `TraceEvent` and `TraceState` objects contain complete expected values;
+> * JSON fixtures are not shared mutably between tests;
+> * the service’s metadata deep copy does not make tests pass accidentally through object identity;
+> * exception assertions verify the correct type and, where stable, meaningful message;
+> * captors do not accidentally capture both first and second `saveAndFlush` invocations as though only one exists;
+> * repository mocks are reset naturally per test rather than manually carrying state;
+> * Mockito strictness does not hide unused or incorrectly ordered stubbing.
+>
+> #### Coverage claims
+>
+> The tests simulate concurrency recovery branches; they do not execute true concurrent database transactions.
+>
+> Ensure the report describes them as:
+>
+> ```text
+> unit coverage of concurrency-recovery behavior
+> ```
+>
+> rather than claiming true concurrent integration coverage.
+>
+> #### Scope
+>
+> Make corrections only for concrete defects.
+>
+> Do not modify:
+>
+> * production code;
+> * `TASKS.md`;
+> * `AI_USAGE.md`;
+> * controllers;
+> * DDL;
+> * configuration;
+> * dependencies;
+> * existing status-calculator tests.
+>
+> If a production defect is discovered, stop and report it before changing production code.
+>
+> #### Validation
+>
+> Run:
+>
+> ```bash
+> git diff --check
+> ./mvnw -q -Dtest=EventIngestionServiceTest test
+> ./mvnw -q test
+> ```
+>
+> Report:
+>
+> 1. findings;
+> 2. corrections made;
+> 3. tests removed, split, or added;
+> 4. transaction-order verification;
+> 5. retry-sequence verification;
+> 6. timestamp verification;
+> 7. final test counts;
+> 8. any remaining risk.
 
 ## Initial Design Decisions
 
