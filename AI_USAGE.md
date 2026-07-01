@@ -5,6 +5,7 @@ This document records how AI tools were used during the challenge. It will be up
 ## Tools Used
 
 * ChatGPT
+* Codex
 
 ## Main Prompts
 
@@ -20,32 +21,45 @@ This document records how AI tools were used during the challenge. It will be up
 
 > Split the challenge into small, explicit implementation tasks suitable for an AI-assisted workflow. Avoid broad tasks that require the AI to infer the entire solution. Include database design, validation, state transitions, tests, Hurl scenarios, documentation, and final verification.
 
-### Prompt 4 — Unit-test standard
+The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 
-> Define unit tests for the event-watchdog domain logic using the following standard:
->
-> * Test names follow `shouldExpectedBehavior_WhenCondition`.
-> * Each test validates one business rule.
-> * Use Arrange / Act / Assert structure.
-> * Use a fixed or controllable `Clock` for time-dependent behavior.
-> * Focus on state transitions, TTL expiration, final events, duplicates, unexpected events, late events, and post-completion behavior.
-> * Avoid testing Spring or JPA wiring unless necessary.
-> * Do not test behavior that is neither required nor explicitly documented as an assumption.
-> * Explain which requirement or assumption each test validates.
+### Prompt 4 — Apply clarified design decisions
 
-### Prompt 5 — Hurl test design
+> Before implementing Task 2, update your working assumptions to match these decisions:
+>
+> * Use two tables: `trace_state` for current trace facts and `trace_event` for accepted event history.
+> * Do not persist a mutable trace-status column. Derive status from completion and expectation facts.
+> * Represent completion using `completed_at`, not both `completed` and `completed_at`.
+> * TTL is calculated from the service acceptance time using an injected UTC `Clock`.
+> * A trace expires when `now >= nextExpectedBefore`.
+> * Optimistic locking protects updates to existing trace rows only.
+> * Concurrent creation of the same `traceId` must be handled through the database primary-key constraint and explicit application-level conflict handling or retry.
+> * Do not rely on a payload hash as the sole mechanism for duplicate detection.
+> * Exact duplicates must be identified by comparing the complete logical request payload, including structured JSON metadata.
+> * JSON object field order must not affect duplicate equality.
+> * A reused `eventId` with different logical content returns `409 Conflict`.
+> * Expected-event fields must be paired.
+> * TTL values must be positive.
+> * Completed traces cannot retain a pending expectation.
+> * An expected event arriving at or after the deadline is late and must not revive the trace.
+> * New non-duplicate events after completion return `409 Conflict`.
+> * The application context path is already `/api`; controllers should map `/events` and `/traces/{traceId}/status`.
+>
+> Review the existing `README.md`, `TASKS.md`, and `AI_USAGE.md` before generating code.
+>
+> For the next step, implement only Task 2: define the database model and update `docker/init-scripts/db/01-init-schema.sql`.
+>
+> Do not implement Java entities, repositories, controllers, services, or tests yet.
+>
+> Before editing, summarize:
+>
+> 1. the proposed tables and columns;
+> 2. every primary key, foreign key, check constraint, and index;
+> 3. how the schema supports duplicate detection, trace status calculation, and concurrency;
+> 4. any remaining ambiguity.
+>
+> Then make the DDL changes and report exactly what changed.
 
-> Define Hurl end-to-end tests for the public API of the distributed event watchdog service.
->
-> Cover:
->
-> * `STARTED`;
-> * `WAITING_OTHER_EVENT`;
-> * `COMPLETED`;
-> * `TTL_EXPIRED_FOR_EVENT`;
-> * selected duplicate, unexpected, and late-event behaviors.
->
-> Validate only HTTP requests and responses. Do not depend on direct database queries. Keep scenarios independent and deterministic.
 
 ## AI-Assisted Areas
 
@@ -60,25 +74,47 @@ So far, AI assistance has been used for:
 * Hurl-test strategy.
 * Documentation structure.
 * Local environment setup guidance.
+* Task 2 PostgreSQL DDL generation.
+* Definition of database constraints, foreign keys, and indexes for trace state and event history.
 
-Implementation assistance will be documented here as it occurs.
+Implementation assistance will continue to be documented as it occurs.
 
 ## Accepted Suggestions
 
-The following initial suggestions were accepted for the implementation plan:
+The following suggestions were accepted for the implementation plan:
 
 * Keep the solution within the requested MVP scope.
+* Use a small layered structure separating API, domain logic, persistence, and configuration.
 * Use PostgreSQL for both event history and current trace state.
 * Preserve accepted event history for auditability.
 * Maintain a separate current-state record for efficient status queries.
 * Store metadata as PostgreSQL `JSONB`.
 * Evaluate TTL lazily when status is queried.
 * Avoid a scheduler because the challenge explicitly permits lazy expiration.
-* Avoid Kafka, SQS, Pub/Sub, Flyway, Liquibase, and distributed locks.
-* Inject `Clock` for deterministic TTL tests.
-* Derive the externally reported status from persisted facts rather than storing a redundant status field.
+* Avoid Kafka, SQS, Pub/Sub, Flyway, Liquibase, distributed locks, and other out-of-scope infrastructure.
+* Inject `Clock` for deterministic TTL calculations and tests.
+* Keep trace-status calculation in a Spring-independent domain component.
+* Derive the externally reported status from persisted facts rather than storing a redundant mutable status field.
+* Use `completed_at` rather than a completion boolean so completion state and timestamp are represented together.
+* Keep event ingestion transactional so accepted event history and current trace state cannot be updated independently.
+* Reject late events during ingestion as well as reporting expiration during status queries.
 * Use database constraints and transactional updates to reduce inconsistent state.
+* Treat database primary keys and unique constraints as the final safeguards for concurrent trace creation and duplicate event IDs.
+* Compare duplicate requests using persisted logical fields, including structured JSON metadata, rather than relying only on a payload hash.
+* Enforce paired expectation fields and completion invariants with database `CHECK` constraints.
+* Use the existing `/api` context path while mapping controllers to `/events` and `/traces/{traceId}/status`.
+* Return a consistent API error structure for validation, conflict, and missing-resource responses.
 * Create planning and AI-usage documentation before implementing application code.
+* Split API contracts, request validation, persistence, status calculation, event ingestion, and controllers into separate tasks.
+* Explicitly define domain enums and response contracts.
+* Name the required Hurl scenario files.
+* Separate domain unit tests from Spring integration concerns.
+* Add explicit test scenarios for exact and conflicting duplicates.
+* Use `trace_state` for current trace facts and `trace_event` for accepted event history.
+* Enforce valid event results, paired expectation fields, positive TTL values, completion invariants, positive event counts, non-negative optimistic-lock versions, and object-only metadata at the database level.
+* Use `trace_event.event_id` as the first lookup for duplicate detection while keeping exact-versus-conflicting comparison in application code.
+* Use PostgreSQL `JSONB` semantics so JSON object field order does not affect metadata equality.
+* Add an index on `trace_event(trace_id, received_at)` for ordered trace-history access.
 
 ## Initial Design Decisions
 
@@ -87,15 +123,24 @@ These decisions must remain consistent across the code, tests, and documentation
 * TTL will be calculated from the time the service accepts the event rather than from client-provided `occurredAt`.
 * A trace is expired when the current time is equal to or later than the deadline.
 * An exact duplicate event is treated as idempotent.
-* A reused `eventId` with different content is treated as a conflict.
+* A reused `eventId` with different logical content is treated as a conflict.
+* Duplicate equality will be determined by comparing the complete logical request payload, including structured metadata, rather than Java entity equality, raw serialized JSON, or a payload hash alone.
 * An unexpected event does not advance the trace.
-* An expected event arriving after expiration is rejected and does not revive the trace.
+* An expected event arriving at or after expiration is rejected and does not revive the trace.
 * A completed trace does not accept new non-duplicate events.
 * A first event may also be a final event.
 * Event `result` and trace lifecycle are independent.
-* Metadata is persisted rather than ignored.
-* Unknown traces return `404`.
+* Metadata is persisted but is not interpreted for state transitions.
+* Unknown traces return `404 Not Found`.
 * Arrival order is authoritative for state transitions; `occurredAt` is retained as event information.
+* Completion is represented by `completed_at`; a non-null value means the trace is completed.
+* The database will enforce that expected-event names and deadlines are either both present or both absent.
+* A completed trace cannot retain a pending expected event.
+* Event-history records will enforce that next-event fields are paired and that TTL values are positive.
+* Accepted-event counts must be positive.
+* Optimistic locking will detect conflicting updates to existing traces.
+* Database primary-key constraints will detect concurrent creation of the same `traceId`; the application must explicitly translate or retry those failures.
+* The externally exposed endpoints are `/api/events` and `/api/traces/{traceId}/status` because the application defines `/api` as its servlet context path.
 
 These decisions may be revised if implementation reveals a stronger alternative. Any revision will be recorded below.
 
@@ -110,8 +155,15 @@ The following suggestions or possible approaches were rejected:
 * Storing only event history and rebuilding trace state on every request, because it adds unnecessary query and transition complexity.
 * Storing only current trace state, because it loses event history and weakens duplicate detection and auditability.
 * Persisting a mutable status field, because it can become inconsistent with completion and TTL facts.
-* Adding an additional Git implementation branch, because the candidate chose to work directly on the fork's `develop` branch.
+* Storing both `completed` and `completed_at`, because the boolean would duplicate information already represented by the timestamp.
+* Relying only on optimistic locking for concurrent creation of a new trace, because no existing row is available to lock.
+* Treating optimistic locking as sufficient for concurrent trace creation, because `@Version` cannot protect a row that does not yet exist.
+* Relying on a payload hash as the sole source of truth for duplicate equality, because canonicalization and hash generation add unnecessary complexity for this MVP.
+* Treating duplicate requests as equal using entity equality or raw serialized JSON, because metadata field order could produce false conflicts.
+* Adding an additional Git implementation branch, because development will continue directly on the fork's `develop` branch.
 * Installing SDKMAN, because the development environment already provides a valid Java 21 installation.
+* Treating a clean database reset as something Codex should execute automatically, because removing Docker volumes is a destructive local-environment operation that requires manual execution.
+* Accepting the partial pending-deadline index without review; it will be retained only if its value is documented, because the MVP status endpoint looks up traces by primary key rather than scanning pending traces.
 
 ## Manual Corrections and Adjustments
 
@@ -125,6 +177,51 @@ clarops sr engineer challenge
 ```
 
 * Corrected the initial workflow suggestion to use a separate implementation branch; development will continue directly on `develop`.
+* Clarified that optimistic locking protects updates to an existing trace but does not by itself prevent concurrent creation of the same `traceId`.
+* Clarified that concurrent creation conflicts require explicit handling of the `trace_id` primary-key violation.
+* Clarified that duplicate detection requires comparison of the logical request payload, including structured metadata, rather than only handling a database uniqueness violation.
+* Replaced the proposed `completed` boolean with `completed_at` to preserve the completion timestamp and avoid redundant state.
+* Added database constraints for paired expectation fields, positive TTL values, valid event results, positive event counts, and completed traces without pending expectations.
+* Rejected the proposed standalone `payload_hash` as unnecessary for the MVP; duplicate requests will be compared using persisted logical fields.
+* Reviewed the Codex requirement analysis and found no material contradiction with the documented assumptions or proposed MVP design.
+* Reviewed the proposed API layering, transaction flow, status calculation, validation rules, and testing strategy and accepted them with the corrections above.
+* Added database primary-key conflict handling for concurrent trace creation.
+* Replaced payload-hash-based duplicate detection with comparison of persisted logical fields, including structured metadata.
+* Clarified that completion is represented by `completed_at`.
+* Clarified that an event is late when it arrives at or after the deadline.
+* Added explicit post-completion Hurl coverage.
+* Added JSON field-order independence to duplicate-comparison tests.
+* Preserved Task 1 as complete and expanded the remaining work from ten broad tasks into twelve smaller implementation tasks.
+* Codex implemented Task 2 only, modifying `docker/init-scripts/db/01-init-schema.sql` and not generating Java code, repositories, controllers, services, or tests.
+* Reviewed Codex's Task 2 summary and confirmed that it followed the requested scope.
+* Confirmed that the generated DDL contains separate current-state and event-history tables and does not add a mutable status column, completion boolean, or payload hash.
+* Identified the partial index on pending expectation deadlines as requiring manual justification or removal because the current API does not scan traces by deadline.
+* Accepted normalization of missing metadata to an empty JSON object only on the condition that the README and duplicate-comparison behavior document that absent metadata and `{}` are logically equivalent.
+* Recorded that `git diff --check -- docker/init-scripts/db/01-init-schema.sql` passed.
+* Clean database initialization and health-endpoint validation remain manual pending checks because Codex correctly declined to delete Docker volumes automatically.
+
+## Task 2 Implementation Record
+
+Codex generated the Task 2 DDL after receiving the clarified design prompt.
+
+Generated changes:
+
+* Added `trace_state` for current trace facts.
+* Added `trace_event` for accepted event history.
+* Added `completed_at`, expectation fields, latest-event facts, accepted-event count, audit timestamps, and optimistic-lock versioning.
+* Stored metadata as PostgreSQL `JSONB`.
+* Added primary keys, a foreign key, check constraints, and trace-history indexing.
+* Did not add a mutable status column, a redundant completion boolean, a payload hash, or application code.
+
+Manual review still required:
+
+* Inspect the complete SQL diff.
+* Confirm all paired-field and completion constraints express the intended invariants.
+* Decide whether to retain or remove the partial deadline index.
+* Confirm and document metadata normalization semantics.
+* Reinitialize PostgreSQL from a clean Docker volume.
+* Start the application and confirm `/api/health`.
+* Mark Task 2 complete only after clean initialization succeeds.
 
 ## Manual Review Responsibilities
 
@@ -133,6 +230,8 @@ All AI-assisted output will be reviewed for:
 * Consistency with the documented assumptions.
 * Correct transaction boundaries.
 * Correct handling of duplicate and conflicting events.
+* Structured comparison of duplicate payloads, including metadata.
+* Correct handling of concurrent creation and update of trace state.
 * Correct deadline and boundary calculations.
 * Database constraints matching application rules.
 * Deterministic time-dependent tests.
@@ -146,7 +245,7 @@ All AI-assisted output will be reviewed for:
 This document must be updated after implementation to include:
 
 * Prompts used for generated or revised Java code.
-* Prompts used for DDL.
+* Results of the clean database initialization for the generated DDL.
 * Prompts used for unit tests.
 * Prompts used for Hurl tests.
 * AI-generated code that was accepted.

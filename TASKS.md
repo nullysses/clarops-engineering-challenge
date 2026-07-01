@@ -1,6 +1,6 @@
 # Tasks
 
-## Task 1 — Analyze requirements and define assumptions
+## Task 1 — Confirm assumptions and API decisions
 
 **Status:** Complete
 
@@ -10,68 +10,136 @@
 * Define unexpected event behavior.
 * Define late expected-event behavior.
 * Define behavior for events received after completion.
-* Define event ordering semantics.
-* Define HTTP responses for validation, conflicts, and missing traces.
+* Define ordering semantics: service arrival order versus `occurredAt`.
+* Define HTTP responses for validation errors, conflicts, and missing traces.
 * Document all decisions in `README.md`.
 
 ## Task 2 — Define the database model and DDL
 
-* Define a table for current trace state.
-* Define a table for received event history.
-* Define primary keys, foreign keys, constraints, and indexes.
-* Store flexible event metadata as PostgreSQL `JSONB`.
-* Add optimistic locking or another concurrency safeguard for trace updates.
+**Status:** Complete
+
+* Add a `trace_state` table for current trace facts.
+* Add a `trace_event` table for accepted event history.
+* Represent completion using `completed_at`.
+* Add primary keys, foreign keys, constraints, and indexes.
+* Store `metadata` as PostgreSQL `JSONB`.
+* Enforce valid event results.
+* Enforce paired expected-event fields.
+* Enforce positive TTL values.
+* Enforce completed traces without pending expectations.
+* Add a `version` column for optimistic locking of existing trace rows.
+* Use the `trace_id` primary key as the final safeguard against concurrent trace creation.
 * Update `docker/init-scripts/db/01-init-schema.sql`.
 * Verify schema initialization from a clean Docker volume.
 
-## Task 3 — Implement API contracts and validation
+## Task 3 — Add domain enums and API contracts
 
-* Define the request contract for `POST /events`.
-* Define the response contract for accepted events.
-* Define the response contract for `GET /traces/{traceId}/status`.
+**Status:** Pending
+
+* Define `EventResult` with `SUCCESS` and `ERROR`.
+* Define `TraceStatus` with:
+
+  * `STARTED`;
+  * `WAITING_OTHER_EVENT`;
+  * `TTL_EXPIRED_FOR_EVENT`;
+  * `COMPLETED`.
+* Define `EventRequest` for `POST /events`.
+* Define the response contract for newly accepted and idempotent events.
+* Define `TraceStatusResponse`.
+* Define a consistent `ApiErrorResponse`.
+
+## Task 4 — Implement request validation and error handling
+
+**Status:** Pending
+
 * Validate required fields.
 * Validate allowed `result` values.
-* Validate paired next-event fields.
-* Reject contradictory requests, such as a final event defining another expected event.
-* Define a consistent API error response.
+* Validate `occurredAt` as an ISO-8601 timestamp.
+* Require `nextExpectedEvent` and `nextEventTtlSeconds` to be provided together.
+* Reject TTL values less than or equal to zero.
+* Reject `finalEvent = true` with another expected event.
+* Return consistent validation errors.
+* Add global exception handling for `400`, `404`, and `409`.
 
-## Task 4 — Implement trace status calculation
+## Task 5 — Implement the persistence layer
 
-* Implement `STARTED`.
-* Implement `WAITING_OTHER_EVENT`.
-* Implement `TTL_EXPIRED_FOR_EVENT`.
-* Implement `COMPLETED`.
-* Calculate status from persisted trace facts rather than storing redundant status values.
-* Inject `Clock` so time-dependent behavior can be tested deterministically.
+**Status:** Pending
 
-## Task 5 — Implement event ingestion
+* Create the JPA entity for `TraceState`.
+* Map `completed_at` as the completion fact.
+* Map the optimistic-locking `version` column using `@Version`.
+* Create the JPA entity for `TraceEvent`.
+* Map metadata to PostgreSQL `JSONB`.
+* Add `TraceStateRepository`.
+* Add `TraceEventRepository`.
+* Add event lookup by `eventId`.
+* Add trace lookup by `traceId`.
+* Support comparison of persisted logical event fields, including structured metadata.
 
-* Detect duplicate event IDs.
+## Task 6 — Implement trace-status calculation
+
+**Status:** Pending
+
+* Define a UTC `Clock` bean.
+* Inject `Clock` into time-dependent services.
+* Calculate status from persisted facts rather than a stored status column.
+* Return `COMPLETED` when `completedAt` is present.
+* Return `STARTED` when the trace is active without an expected event.
+* Return `WAITING_OTHER_EVENT` when an expectation exists and the deadline has not passed.
+* Return `TTL_EXPIRED_FOR_EVENT` when `now >= nextExpectedBefore`.
+* Unit-test this logic independently from Spring.
+
+## Task 7 — Implement event ingestion
+
+**Status:** Pending
+
+* Process event ingestion in one transaction.
+* Look up an existing event by `eventId` before modifying trace state.
+* Treat an exact logical duplicate as idempotent.
+* Reject reuse of an `eventId` with different logical content.
 * Create trace state for the first accepted event.
 * Persist accepted event history.
 * Advance a trace when the expected event arrives.
-* Reject unexpected events according to the documented assumptions.
-* Reject late events according to the documented assumptions.
-* Prevent non-duplicate events after trace completion.
-* Apply event persistence and trace updates in one transaction.
-* Protect concurrent trace updates from inconsistent state.
+* Reject unexpected event names.
+* Reject expected events arriving at or after the deadline.
+* Reject new non-duplicate events after completion.
+* Update trace state for:
 
-## Task 6 — Implement trace status endpoint
+  * final events;
+  * events defining another expectation;
+  * events leaving the trace active without an expectation.
+* Clear pending expectations when the flow completes.
+* Use optimistic locking to detect conflicting updates to existing traces.
+* Explicitly translate or retry primary-key conflicts caused by concurrent creation of the same `traceId`.
 
-* Load trace state by `traceId`.
-* Return `404` when the trace does not exist.
-* Calculate TTL expiration when the endpoint is called.
-* Return the latest event information.
-* Return the current expectation and deadline when applicable.
-* Return the number of accepted events.
+## Task 8 — Implement HTTP endpoints
 
-## Task 7 — Add unit tests
+**Status:** Pending
+
+* Add `POST /events`, exposed externally as `POST /api/events`.
+* Add `GET /traces/{traceId}/status`, exposed externally as `GET /api/traces/{traceId}/status`.
+* Return `201 Created` for newly accepted events.
+* Return `200 OK` for exact idempotent duplicates.
+* Return `400 Bad Request` for invalid contracts.
+* Return `409 Conflict` for conflicting duplicates and invalid state transitions.
+* Return `404 Not Found` for unknown traces.
+* Return current status with:
+
+  * latest event information;
+  * current expectation;
+  * expectation deadline;
+  * accepted event count;
+  * completion information.
+
+## Task 9 — Add unit tests
+
+**Status:** Pending
 
 Testing standard:
 
 * Test names follow `shouldExpectedBehavior_WhenCondition`.
 * Each test validates one business rule.
-* Tests use Arrange / Act / Assert structure.
+* Tests use Arrange / Act / Assert.
 * Time-dependent tests use a fixed or controllable `Clock`.
 * Tests focus on domain behavior rather than Spring wiring.
 * Tests do not invent behavior that is not required or documented as an assumption.
@@ -82,26 +150,42 @@ Required scenarios:
 * Event without another expectation produces `STARTED`.
 * Event with a next expectation produces `WAITING_OTHER_EVENT`.
 * Status before the deadline remains waiting.
-* Status at or after the deadline is expired.
+* Status exactly at the deadline is expired.
+* Status after the deadline is expired.
 * Final event produces `COMPLETED`.
 * Completed trace never reports expiration.
-* Duplicate event behavior.
-* Unexpected event behavior.
-* Late event behavior.
-* Event after completion behavior.
+* Exact duplicate is idempotent.
+* Conflicting duplicate is rejected.
+* Structured metadata comparison is independent of JSON field order.
+* Unexpected event is rejected.
+* Late expected event is rejected.
+* Event after completion is rejected.
+* Conflicting optimistic-lock update is not silently accepted.
 
-## Task 8 — Add Hurl end-to-end tests
+## Task 10 — Add Hurl end-to-end tests
 
-* Add a scenario that reaches `STARTED`.
-* Add a scenario that reaches `WAITING_OTHER_EVENT`.
-* Add a scenario that reaches `COMPLETED`.
-* Add a scenario that reaches `TTL_EXPIRED_FOR_EVENT`.
-* Add scenarios for selected duplicate, unexpected, and late-event decisions.
-* Validate only the public HTTP API.
-* Avoid direct database assertions unless explicitly justified.
-* Ensure all Hurl scenarios pass from a clean environment.
+**Status:** Pending
 
-## Task 9 — Complete documentation
+* Add `hurl/started-flow.hurl`.
+* Add `hurl/waiting-other-event-flow.hurl`.
+* Add `hurl/completed-flow.hurl`.
+* Add `hurl/ttl-expired-flow.hurl`.
+* Add selected conflict scenarios for:
+
+  * exact duplicate event;
+  * conflicting duplicate event;
+  * unexpected event;
+  * late event;
+  * event after completion.
+* Validate only public HTTP API responses.
+* Avoid direct database assertions.
+* Use unique event and trace identifiers per scenario.
+* Keep TTL scenarios deterministic and resistant to timing flakiness.
+* Ensure all scenarios pass from a clean environment.
+
+## Task 11 — Complete documentation
+
+**Status:** Pending
 
 Update `README.md` with:
 
@@ -112,7 +196,7 @@ Update `README.md` with:
 * TTL calculation.
 * State-transition rules.
 * Duplicate, unexpected, late, and post-completion behavior.
-* Trade-offs.
+* Concurrency limitations and safeguards.
 * Request and response examples.
 * Setup instructions.
 * Unit-test instructions.
@@ -132,14 +216,17 @@ Update `AI_USAGE.md` with:
 * Manual corrections.
 * Review performed on generated output.
 
-## Task 10 — Final verification
+## Task 12 — Final verification
+
+**Status:** Pending
 
 * Run `./mvnw clean spotless:apply verify`.
 * Run all unit tests.
-* Run all Hurl scenarios.
 * Reset Docker volumes.
-* Start the project from a clean database.
-* Repeat the health check.
-* Repeat all API scenarios.
-* Review all generated code and documentation for consistency.
+* Start the application from a clean database.
+* Confirm `/api/health` works.
+* Run every Hurl scenario.
+* Repeat the core API scenarios manually if necessary.
+* Review `README.md`, `TASKS.md`, `AI_USAGE.md`, code, DDL, and tests for consistency.
+* Confirm that all generated code can be explained and defended.
 * Confirm that the repository contains every required deliverable.
