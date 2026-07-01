@@ -3,7 +3,7 @@
 -- Distributed event tracking, TTL expiration, and operational
 -- flow analysis.
 -- Idempotent — safe to re-execute.
--- UUIDs must be provided by the application layer.
+-- Identifiers must be provided by the application layer.
 -- ============================================================
 CREATE
   SCHEMA IF NOT EXISTS clarops_challenge_schema;
@@ -83,14 +83,6 @@ CREATE
       CONSTRAINT trace_state_events_received_positive_check CHECK(events_received > 0),
       CONSTRAINT trace_state_version_non_negative_check CHECK(version >= 0)
     );
-
-CREATE
-  INDEX
-    IF NOT EXISTS idx_trace_state_pending_expectation_deadline
-      ON trace_state(next_expected_before)
-      WHERE
-        completed_at IS NULL
-        AND next_expected_event IS NOT NULL;
 
 -- -------------------------
 -- trace_event

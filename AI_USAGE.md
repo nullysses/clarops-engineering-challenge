@@ -1606,16 +1606,6 @@ Generated changes:
 * Added primary keys, a foreign key, check constraints, and trace-history indexing.
 * Did not add a mutable status column, a redundant completion boolean, a payload hash, or application code.
 
-Manual review still required:
-
-* Inspect the complete SQL diff.
-* Confirm all paired-field and completion constraints express the intended invariants.
-* Decide whether to retain or remove the partial deadline index.
-* Confirm and document metadata normalization semantics.
-* Reinitialize PostgreSQL from a clean Docker volume.
-* Start the application and confirm `/api/health`.
-* Mark Task 2 complete only after clean initialization succeeds.
-
 ### Task 3 Implementation Record
 
 Codex generated the Task 3 domain enums and API contracts after receiving the scoped Task 3 prompt.
