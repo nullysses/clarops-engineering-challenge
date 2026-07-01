@@ -23,7 +23,7 @@ This document records how AI tools were used during the challenge. It will be up
 
 The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 
-### Prompt 4 — Apply clarified design decisions ans Task 2 implementation
+### Prompt 4 — Apply clarified design decisions and implement Task 2
 
 > Before implementing Task 2, update your working assumptions to match these decisions:
 >
@@ -721,26 +721,262 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > Report findings, corrections, and remaining risks.
 
-ending until Tasks 7 and 8 are implemented and the public API is manually exercised.
+### Prompt 12 — Implement Task 7: transactional event ingestion
+
+> Review the current `README.md`, `TASKS.md`, `AI_USAGE.md`, DDL, API contracts, validation rules, persistence entities, repositories, exceptions, `Clock` configuration, and Task 6 status logic before editing.
+>
+> Implement only Task 7: transactional event ingestion.
+>
+> Do not mark Task 7 complete in `TASKS.md`. It will remain pending until Task 8 exposes the public endpoints and the API is manually exercised.
+>
+> ## Exact file scope
+>
+> Create only:
+>
+> ```text
+> src/main/java/com/clara/challenge/watchdog/service/EventIngestionService.java
+> ```
+>
+> Keep it directly beside `TraceStatusService` under `com.clara.challenge.watchdog.service`.
+>
+> Use `TransactionTemplate` inside this service so each ingestion attempt has an explicit transaction boundary and race recovery occurs only after the failed transaction has rolled back.
+>
+> Do not create additional `application`, `usecase`, `command`, `handler`, `mapper`, `transaction`, or nested ingestion packages. Do not create a second transactional service unless a concrete framework limitation makes the single-service `TransactionTemplate` design impossible.
+>
+> You may modify `TraceState` only if a small mechanical persistence mutation is genuinely required. Do not move lifecycle rules into the entity.
+>
+> ## Public API
+>
+> Add:
+>
+> ```java
+> EventIngestionResponse ingest(EventRequest request)
+> ```
+>
+> Return:
+>
+> * `duplicate = false` for a newly accepted event;
+> * `duplicate = true` for an exact idempotent duplicate.
+>
+> Do not add a controller yet.
+>
+> ## Transaction structure
+>
+> Inject the existing repositories, UTC `Clock`, and Spring transaction manager or `TransactionTemplate`.
+>
+> The public `ingest` method coordinates:
+>
+> 1. one normal transactional attempt;
+> 2. post-rollback race inspection when a database integrity violation occurs;
+> 3. at most one retry for concurrent trace creation.
+>
+> Each transactional attempt must capture exactly one timestamp using:
+>
+> ```java
+> Instant receivedAt = Instant.now(clock);
+> ```
+>
+> Reuse that timestamp within the attempt for event history, trace timestamps, completion, and deadline calculation. A retry is a new attempt and may capture a new timestamp because the original transaction did not accept the event.
+>
+> Do not catch a constraint exception and continue inside the same transaction. Avoid self-invocation-based `@Transactional` methods.
+>
+> ## Metadata normalization
+>
+> Normalize omitted metadata to an empty Jackson 3 object node before persistence and duplicate comparison.
+>
+> Therefore omitted metadata and `{}` are logically equivalent.
+>
+> Do not compare raw serialized JSON strings. `TraceEvent` must never receive null metadata.
+>
+> ## Duplicate handling
+>
+> In every transactional attempt, look up `TraceEvent` by `eventId` before reading or mutating `TraceState`.
+>
+> Compare the complete logical request payload:
+>
+> * `eventId`;
+> * `traceId`;
+> * `eventName`;
+> * `result`;
+> * `occurredAt`;
+> * `nextExpectedEvent`;
+> * `nextEventTtlSeconds`;
+> * normalized `finalEvent`;
+> * normalized structured metadata.
+>
+> Exclude server-generated `receivedAt`.
+>
+> Use `JsonNode.equals` so JSON object field order does not affect equality.
+>
+> Behavior:
+>
+> * exact duplicate → return `duplicate = true` without modifying state or history;
+> * reused `eventId` with different logical content → throw `WatchdogConflictException`;
+> * exact duplicates remain idempotent even after completion or expiration.
+>
+> Keep the comparison as a small private method in `EventIngestionService`; do not create a separate mapper or comparator class for this MVP.
+>
+> ## First event
+>
+> When no trace exists:
+>
+> * populate latest-event fields from the request;
+> * set `eventsReceived = 1`;
+> * set `createdAt` and `updatedAt` to `receivedAt`;
+> * set `completedAt = receivedAt` for a final event;
+> * otherwise calculate `nextExpectedBefore = receivedAt + TTL` when an expectation exists;
+> * otherwise leave completion and expectation fields null.
+>
+> Save and flush `TraceState` before inserting `TraceEvent`, because `trace_event.trace_id` has a foreign key to `trace_state.trace_id`.
+>
+> Both writes must remain in the same transaction.
+>
+> ## Existing trace
+>
+> Before applying business rules, verify that `nextExpectedEvent` and `nextExpectedBefore` are either both present or both absent. Throw `IllegalStateException` for a half-paired persisted state.
+>
+> For a non-duplicate event, apply checks in this order:
+>
+> 1. completed trace → `WatchdogConflictException`;
+> 2. active expectation with `receivedAt >= nextExpectedBefore` → late-event conflict;
+> 3. active expectation whose name does not match `eventName` → unexpected-event conflict;
+> 4. otherwise accept the event.
+>
+> Rejected events must not be persisted, increment counters, or modify state.
+>
+> For an accepted event:
+>
+> * update all latest-event facts;
+> * increment `eventsReceived` by one;
+> * set `updatedAt = receivedAt`;
+> * final event → set `completedAt = receivedAt` and clear expectation fields;
+> * next expectation → store its name and `receivedAt + TTL`, with `completedAt = null`;
+> * no next expectation → clear expectation fields and leave `completedAt = null`.
+>
+> `result = ERROR` does not independently alter lifecycle behavior.
+>
+> Persist one `TraceEvent` for every newly accepted event. Do not persist duplicates or rejected events.
+>
+> Flush before returning success so optimistic-lock and uniqueness failures are observed inside the transaction.
+>
+> ## Concurrency recovery
+>
+> Existing trace updates rely on `@Version`. Translate `OptimisticLockingFailureException` to `WatchdogConflictException`.
+>
+> When a `DataIntegrityViolationException` escapes a rolled-back attempt:
+>
+> 1. start a new transaction and re-read `eventId`;
+> 2. if it now exists, return an exact duplicate or throw a conflicting-duplicate exception;
+> 3. otherwise re-read `traceId`;
+> 4. if the trace now exists and no retry has been used, retry ingestion once in a new transaction;
+> 5. otherwise rethrow the original persistence exception.
+>
+> Do not parse PostgreSQL error-message text. Do not convert unrelated integrity failures into `409 Conflict`. Do not use unbounded retries.
+>
+> ## Scope restrictions
+>
+> Do not add:
+>
+> * controllers or endpoint mappings;
+> * status-endpoint changes;
+> * Hurl files;
+> * schedulers or background jobs;
+> * new dependencies;
+> * DDL changes;
+> * persistence integration tests;
+> * broad Task 9 unit-test coverage;
+> * a stored mutable trace-status field.
+>
+> Do not modify Task 6 unless a concrete blocking defect is discovered.
+>
+> ## Before editing
+>
+> Summarize:
+>
+> 1. the exact file to create and any existing file that truly requires modification;
+> 2. the `TransactionTemplate` flow;
+> 3. duplicate comparison;
+> 4. first-event write order;
+> 5. existing-trace transition order;
+> 6. event-ID race recovery;
+> 7. trace-ID race recovery;
+> 8. optimistic-lock handling;
+> 9. unresolved ambiguity.
+>
+> Then implement only Task 7.
+>
+> ## After editing
+>
+> Report:
+>
+> 1. files created or modified;
+> 2. transaction boundaries;
+> 3. duplicate comparison and metadata normalization;
+> 4. first-event behavior;
+> 5. existing-trace transitions;
+> 6. concurrency recovery;
+> 7. commands run;
+> 8. corrections made;
+> 9. unresolved risks.
+>
+> Run:
+>
+> ```bash
+> git diff --check
+> ./mvnw -q test
+> ```
+
+## Initial Design Decisions
+
+These decisions must remain consistent across the code, tests, and documentation:
+
+* TTL will be calculated from the time the service accepts the event rather than from client-provided `occurredAt`.
+* A trace is expired when the current time is equal to or later than the deadline.
+* An exact duplicate event is treated as idempotent.
+* A reused `eventId` with different logical content is treated as a conflict.
+* Duplicate equality will be determined by comparing the complete logical request payload, including structured metadata, rather than Java entity equality, raw serialized JSON, or a payload hash alone.
+* An unexpected event does not advance the trace.
+* An expected event arriving at or after expiration is rejected and does not revive the trace.
+* A completed trace does not accept new non-duplicate events.
+* A first event may also be a final event.
+* Event `result` and trace lifecycle are independent.
+* Metadata is persisted but is not interpreted for state transitions.
+* Unknown traces return `404 Not Found`.
+* Arrival order is authoritative for state transitions; `occurredAt` is retained as event information.
+* Completion is represented by `completed_at`; a non-null value means the trace is completed.
+* The database will enforce that expected-event names and deadlines are either both present or both absent.
+* A completed trace cannot retain a pending expected event.
+* Event-history records will enforce that next-event fields are paired and that TTL values are positive.
+* Accepted-event counts must be positive.
+* Optimistic locking will detect conflicting updates to existing traces.
+* Database primary-key constraints will detect concurrent creation of the same `traceId`; the application must explicitly translate or retry those failures.
+* The externally exposed endpoints are `/api/events` and `/api/traces/{traceId}/status` because the application defines `/api` as its servlet context path.
+* API request and response contracts are Java records and remain independent from persistence entities.
+* API timestamps use `Instant`.
+* Metadata uses `tools.jackson.databind.JsonNode`, matching the Jackson 3 packages resolved by Spring Boot 4.
+* Omitted `finalEvent` values are normalized to `false` in the `EventRequest` compact constructor.
+* Event ingestion responses expose `eventId`, `traceId`, and whether the request was an idempotent duplicate.
+
+These decisions may be revised if implementation reveals a stronger alternative. Any revision will be recorded below.
 
 ## AI-Assisted Areas
 
 So far, AI assistance has been used for:
 
-* Requirement analysis.
-* Identification of ambiguous behavior.
-* Initial technical design.
-* Database-model recommendations.
-* Task decomposition.
-* Unit-test strategy.
-* Hurl-test strategy.
-* Documentation structure.
-* Local environment setup guidance.
-* Task 2 PostgreSQL DDL generation.
-* Definition of database constraints, foreign keys, and indexes for trace state and event history.
-* Task 3 domain enum and API contract generation.
-* Java 21 record-based request and response contract design.
-* Resolution of the project-specific Jackson 3 `JsonNode` package.
+* Requirement analysis and ambiguity identification.
+* Initial technical design and task decomposition.
+* Database-model recommendations and PostgreSQL DDL generation.
+* Constraint, foreign-key, and index design.
+* API contract and domain-enum generation.
+* Request validation and centralized API error handling.
+* JPA entity, repository, optimistic-lock, and JSONB mapping.
+* Deterministic UTC `Clock` configuration.
+* Spring-independent trace-status calculation.
+* Status-service response mapping.
+* Focused status-calculator unit tests.
+* Local environment setup and verification guidance.
+* Unit-test and Hurl-test strategy.
+* Documentation structure and review.
 
 Implementation assistance will continue to be documented as it occurs.
 
@@ -787,39 +1023,13 @@ The following suggestions were accepted for the implementation plan:
 * Use Jackson's structured `JsonNode` type for metadata rather than raw JSON strings.
 * Normalize an omitted `finalEvent` value to `false`.
 * Use one `EventIngestionResponse` contract for both newly accepted and idempotent duplicate events, distinguished by a `duplicate` flag.
-
-## Initial Design Decisions
-
-These decisions must remain consistent across the code, tests, and documentation:
-
-* TTL will be calculated from the time the service accepts the event rather than from client-provided `occurredAt`.
-* A trace is expired when the current time is equal to or later than the deadline.
-* An exact duplicate event is treated as idempotent.
-* A reused `eventId` with different logical content is treated as a conflict.
-* Duplicate equality will be determined by comparing the complete logical request payload, including structured metadata, rather than Java entity equality, raw serialized JSON, or a payload hash alone.
-* An unexpected event does not advance the trace.
-* An expected event arriving at or after expiration is rejected and does not revive the trace.
-* A completed trace does not accept new non-duplicate events.
-* A first event may also be a final event.
-* Event `result` and trace lifecycle are independent.
-* Metadata is persisted but is not interpreted for state transitions.
-* Unknown traces return `404 Not Found`.
-* Arrival order is authoritative for state transitions; `occurredAt` is retained as event information.
-* Completion is represented by `completed_at`; a non-null value means the trace is completed.
-* The database will enforce that expected-event names and deadlines are either both present or both absent.
-* A completed trace cannot retain a pending expected event.
-* Event-history records will enforce that next-event fields are paired and that TTL values are positive.
-* Accepted-event counts must be positive.
-* Optimistic locking will detect conflicting updates to existing traces.
-* Database primary-key constraints will detect concurrent creation of the same `traceId`; the application must explicitly translate or retry those failures.
-* The externally exposed endpoints are `/api/events` and `/api/traces/{traceId}/status` because the application defines `/api` as its servlet context path.
-* API request and response contracts are Java records and remain independent from persistence entities.
-* API timestamps use `Instant`.
-* Metadata uses `tools.jackson.databind.JsonNode`, matching the Jackson 3 packages resolved by Spring Boot 4.
-* Omitted `finalEvent` values are normalized to `false` in the `EventRequest` compact constructor.
-* Event ingestion responses expose `eventId`, `traceId`, and whether the request was an idempotent duplicate.
-
-These decisions may be revised if implementation reveals a stronger alternative. Any revision will be recorded below.
+* Use Jakarta Bean Validation for field rules and explicit cross-field validation for request invariants.
+* Return stable API error codes without exposing parser, SQL, stack-trace, or internal exception details.
+* Map persistence entities explicitly to the supplied DDL and keep them separate from API records.
+* Store `traceId` directly on event history rather than introducing a bidirectional JPA relationship.
+* Use Hibernate JSON mapping with Jackson 3 `JsonNode` for PostgreSQL `JSONB`.
+* Calculate trace status in a pure domain component and obtain current time from an injected UTC `Clock`.
+* Validate persisted expectation-field pairing before applying status precedence.
 
 ## Rejected Suggestions
 
@@ -888,7 +1098,9 @@ clarops sr engineer challenge
 * Recorded that `git diff --check` passed.
 * Recorded that `./mvnw -q -DskipTests compile` passed after the Jackson package correction.
 
-## Task 2 Implementation Record
+## Implementation Records
+
+### Task 2 Implementation Record
 
 Codex generated the Task 2 DDL after receiving the clarified design prompt.
 
@@ -911,7 +1123,7 @@ Manual review still required:
 * Start the application and confirm `/api/health`.
 * Mark Task 2 complete only after clean initialization succeeds.
 
-## Task 3 Implementation Record
+### Task 3 Implementation Record
 
 Codex generated the Task 3 domain enums and API contracts after receiving the scoped Task 3 prompt.
 
@@ -947,7 +1159,7 @@ Scope review:
 * No controllers, services, repositories, JPA entities, exception handlers, validation annotations, tests, persistence code, dependency changes, or DDL changes were added.
 * Task 3 is complete after source review and successful compilation.
 
-## Task 4 Implementation Record
+### Task 4 Implementation Record
 
 Codex implemented request validation and centralized API error handling.
 
@@ -985,7 +1197,7 @@ git diff --check
 
 Both commands passed.
 
-## Task 5 Implementation Record
+### Task 5 Implementation Record
 
 Codex implemented the JPA persistence layer for the watchdog service.
 
@@ -1031,7 +1243,7 @@ Remaining verification:
 * JSONB persistence must be exercised through a database-backed flow.
 * Metadata normalization remains part of Task 7.
 
-## Task 6 Implementation Record
+### Task 6 Implementation Record
 
 Codex implemented deterministic trace-status calculation and status-query orchestration.
 
@@ -1086,7 +1298,6 @@ Remaining verification:
 * The existing Spring context test logs a PostgreSQL connection warning in the sandbox environment, but the Maven test run succeeds.
 * `TraceStatusService` is not yet exposed through HTTP.
 * Task 6 will remain pending until Tasks 7 and 8 are implemented and the public API is manually exercised.
-
 
 ## Manual Review Responsibilities
 
