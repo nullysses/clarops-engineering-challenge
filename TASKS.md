@@ -2,6 +2,8 @@
 
 ## Task 1 — Analyze requirements and define assumptions
 
+**Status:** Complete
+
 * Define how TTL is calculated.
 * Define the exact expiration boundary.
 * Define duplicate `eventId` behavior.

@@ -701,3 +701,125 @@ The goal is to evaluate how the candidate works with AI-generated code, how they
 Keep the solution simple.
 
 We are not looking for a perfect event-driven platform. We are looking for a small and thoughtful implementation that shows how you reason about distributed events, TTL expiration, ambiguous requirements, database modeling, AI-assisted development, task decomposition, and testing standards.
+
+## Problem Understanding
+
+The service receives events belonging to distributed flows identified by `traceId`. Each accepted event may:
+
+* leave the trace active without another expected event;
+* define the next expected event and its TTL;
+* complete the trace.
+
+The service persists event history and enough current trace state to answer status queries efficiently. TTL expiration is evaluated when the status endpoint is called; no scheduler or background process is required.
+
+The supported trace statuses are:
+
+* `STARTED`
+* `WAITING_OTHER_EVENT`
+* `TTL_EXPIRED_FOR_EVENT`
+* `COMPLETED`
+
+## Assumptions and Behavioral Decisions
+
+### TTL calculation
+
+TTL is calculated from the time the service accepts the event, not from the client-provided `occurredAt`.
+
+This avoids clock-skew and delayed-delivery problems affecting operational deadlines.
+
+A trace is expired when:
+
+```text
+currentTime >= nextExpectedBefore
+```
+
+### Event ordering
+
+Events are processed in service-arrival order.
+
+`occurredAt` is retained as event information but does not determine state-transition order.
+
+### Duplicate events
+
+`eventId` is globally unique.
+
+* An exact duplicate is treated as an idempotent request and does not increment the event count or modify trace state.
+* Reusing an `eventId` with different content returns `409 Conflict`.
+
+### Unexpected events
+
+When a trace is waiting for a specific event, another event name is rejected with `409 Conflict`.
+
+The rejected event is not persisted and does not modify trace state.
+
+### Late events
+
+If the expected event arrives at or after its deadline, it is rejected with `409 Conflict`.
+
+The trace remains expired and is not automatically revived.
+
+### Completed traces
+
+A first event may also be a final event.
+
+After completion:
+
+* exact duplicate events remain idempotent;
+* new events are rejected with `409 Conflict`;
+* the trace is always reported as `COMPLETED`, never expired.
+
+### Event result
+
+`result` describes the outcome of the individual event and does not directly determine trace status.
+
+An event with `result = ERROR` may still:
+
+* define another expected event;
+* complete the trace.
+
+### Final-event consistency
+
+An event with `finalEvent = true` must not define `nextExpectedEvent` or `nextEventTtlSeconds`.
+
+Such contradictory requests return `400 Bad Request`.
+
+### Next-event fields
+
+`nextExpectedEvent` and `nextEventTtlSeconds` must either both be provided or both be absent.
+
+TTL must be greater than zero.
+
+### STARTED semantics
+
+`STARTED` means that the trace is active, not completed, and currently has no expected next event.
+
+It may therefore apply after more than one accepted event, not only immediately after the first event.
+
+### Metadata
+
+Event metadata is persisted as PostgreSQL `JSONB`.
+
+The service does not interpret metadata for state transitions.
+
+### Missing traces
+
+Querying an unknown `traceId` returns `404 Not Found`.
+
+### Consistency and concurrency
+
+Event persistence and trace-state updates occur in one database transaction.
+
+Database uniqueness constraints protect event IDs, and optimistic locking protects concurrent updates to the same trace.
+
+## HTTP Response Decisions
+
+| Situation                             |          Response |
+| ------------------------------------- | ----------------: |
+| New event accepted                    |     `201 Created` |
+| Exact duplicate accepted idempotently |          `200 OK` |
+| Invalid request                       | `400 Bad Request` |
+| Unexpected event                      |    `409 Conflict` |
+| Late expected event                   |    `409 Conflict` |
+| Conflicting duplicate event ID        |    `409 Conflict` |
+| New event after completion            |    `409 Conflict` |
+| Trace not found                       |   `404 Not Found` |
