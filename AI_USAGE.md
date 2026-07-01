@@ -786,6 +786,305 @@ Remaining verification:
 * JSONB persistence must be exercised through a database-backed flow.
 * Metadata normalization remains part of Task 7.
 
+### Prompt 10 — Implement Task 6: trace-status calculation
+
+> Review the current `README.md`, `TASKS.md`, `AI_USAGE.md`, DDL, API contracts, validation code, and persistence entities before editing.
+>
+> Implement only Task 6: trace-status calculation and deterministic time configuration.
+>
+> Do not mark Task 6 complete in `TASKS.md`. The implementation will be reviewed now, but final completion will remain pending until the public API can be exercised manually after Tasks 7 and 8.
+>
+> ## Required configuration
+>
+> Add a Spring bean that provides:
+>
+> ```java
+> Clock.systemUTC()
+> ```
+>
+> Place it in a small configuration class under an appropriate configuration package.
+>
+> All time-dependent watchdog logic must receive a `Clock` through dependency injection rather than calling:
+>
+> ```java
+> Instant.now()
+> ```
+>
+> directly.
+>
+> Do not modify error-response timestamp handling unless it is directly necessary for Task 6.
+>
+> ## Required domain calculation
+>
+> Create a small Spring-independent component responsible for calculating `TraceStatus` from persisted trace facts and a supplied current time.
+>
+> Prefer a pure domain class such as:
+>
+> ```text
+> TraceStatusCalculator
+> ```
+>
+> under:
+>
+> ```text
+> com.clara.challenge.watchdog.domain
+> ```
+>
+> The calculator must not:
+>
+> * query repositories;
+> * depend on Spring;
+> * mutate `TraceState`;
+> * persist anything;
+> * contain HTTP behavior.
+>
+> It may accept either:
+>
+> * a `TraceState` plus an `Instant`; or
+> * the individual persisted facts required for calculation.
+>
+> Prefer the option that keeps the domain component easy to unit-test without excessive argument lists or unnecessary DTOs.
+>
+> ## Status rules
+>
+> Apply these rules in this precedence order:
+>
+> 1. When `completedAt` is non-null, return `COMPLETED`.
+>
+> 2. When there is no current expected event and no deadline, return `STARTED`.
+>
+> 3. When an expectation exists and:
+>
+>    ```text
+>    now < nextExpectedBefore
+>    ```
+>
+>    return `WAITING_OTHER_EVENT`.
+>
+> 4. When an expectation exists and:
+>
+>    ```text
+>    now >= nextExpectedBefore
+>    ```
+>
+>    return `TTL_EXPIRED_FOR_EVENT`.
+>
+> The exact deadline boundary is therefore expired.
+>
+> Do not persist expiration or modify the trace when calculating status.
+>
+> ## Status query service
+>
+> Add the smallest service needed to retrieve and calculate the current status of a trace.
+>
+> The service should:
+>
+> * load `TraceState` using `TraceStateRepository.findById`;
+> * throw `WatchdogNotFoundException` when the trace does not exist;
+> * obtain the current time from the injected UTC `Clock`;
+> * delegate status selection to `TraceStatusCalculator`;
+> * produce the existing `TraceStatusResponse`.
+>
+> The response must include:
+>
+> * `traceId`;
+> * calculated status;
+> * latest event ID;
+> * latest event name;
+> * latest event result;
+> * current expected event;
+> * current expectation deadline;
+> * accepted event count;
+> * completion timestamp.
+>
+> Keep mapping explicit and small. Do not add MapStruct.
+>
+> A reasonable service name is:
+>
+> ```text
+> TraceStatusService
+> ```
+>
+> under:
+>
+> ```text
+> com.clara.challenge.watchdog.service
+> ```
+>
+> ## Unit tests for the calculator
+>
+> Although the larger unit-test task is Task 9, Task 6 includes tests directly required to verify this isolated status calculation.
+>
+> Add focused tests for `TraceStatusCalculator` covering:
+>
+> * completed traces return `COMPLETED`;
+> * completed status takes precedence over a stale expectation;
+> * active trace without an expectation returns `STARTED`;
+> * expectation before its deadline returns `WAITING_OTHER_EVENT`;
+> * expectation exactly at its deadline returns `TTL_EXPIRED_FOR_EVENT`;
+> * expectation after its deadline returns `TTL_EXPIRED_FOR_EVENT`.
+>
+> Testing standard:
+>
+> * Use JUnit 5.
+> * Use names in the form `shouldExpectedBehavior_WhenCondition`.
+> * Follow Arrange / Act / Assert.
+> * Test one business rule per test.
+> * Use fixed `Instant` values.
+> * Do not load Spring for the pure calculator tests.
+>
+> A small service unit test for unknown traces and response mapping is acceptable if it remains focused. Do not add database integration tests or controller tests yet.
+>
+> ## Invalid persisted-state handling
+>
+> The database constraints guarantee that expectation name and deadline are paired.
+>
+> The calculator should still fail explicitly rather than silently produce a misleading status if it receives an impossible in-memory state where only one expectation field is present.
+>
+> Use a clear `IllegalArgumentException` or `IllegalStateException`. Do not introduce a public HTTP error contract for corrupted persisted state.
+>
+> ## Scope restrictions
+>
+> Do not add:
+>
+> * event-ingestion logic;
+> * event duplicate comparison;
+> * trace-state transitions;
+> * controllers;
+> * `POST /events`;
+> * `GET /traces/{traceId}/status`;
+> * Hurl files;
+> * database migrations;
+> * DDL changes;
+> * new dependencies;
+> * scheduler or background expiration processing.
+>
+> Do not modify Task 5 persistence mappings unless a concrete defect blocks Task 6.
+>
+> ## Before editing
+>
+> Summarize:
+>
+> 1. the exact files to create or modify;
+> 2. the calculator input and API;
+> 3. the status-rule precedence;
+> 4. how `Clock` will be configured and used;
+> 5. how invalid persisted states will be handled;
+> 6. the tests to add;
+> 7. any ambiguity.
+>
+> Then implement only Task 6.
+>
+> ## After editing
+>
+> Report:
+>
+> 1. files created or modified;
+> 2. status rules implemented;
+> 3. `Clock` configuration and injection;
+> 4. status response mapping;
+> 5. tests added;
+> 6. commands run;
+> 7. corrections made;
+> 8. unresolved risks.
+>
+> Run:
+>
+> ```bash
+> git diff --check
+> ./mvnw -q test
+> ```
+>
+
+### Prompt 11 — Review and correct Task 6
+
+> Review only the Task 6 implementation.
+>
+> Verify:
+>
+> * `TraceStatusCalculator` is Spring-independent and side-effect free;
+> * expectation name and deadline pairing is validated before status precedence;
+> * exactly one expectation field being present throws `IllegalStateException`, including when `completedAt` is non-null;
+> * a completed trace with both expectation fields present still returns `COMPLETED`;
+> * the exact deadline boundary returns `TTL_EXPIRED_FOR_EVENT`;
+> * `TraceStatusService` uses `Instant.now(clock)` rather than system time directly;
+> * missing traces throw `WatchdogNotFoundException`;
+> * response mapping includes every field from `TraceStatusResponse`;
+> * no controller, ingestion logic, persistence mutation, scheduler, or Hurl code was added.
+>
+> Add or adjust tests for:
+>
+> * completed trace with only `nextExpectedEvent` present;
+> * completed trace with only `nextExpectedBefore` present;
+> * completed trace with a fully paired stale expectation.
+>
+> Make corrections only for concrete defects.
+>
+> Run:
+>
+> ```bash
+> git diff --check
+> ./mvnw -q test
+> ```
+>
+> Report findings, corrections, and remaining risks.
+
+## Task 6 Implementation Record
+
+Codex implemented deterministic trace-status calculation and status-query orchestration.
+
+Generated changes:
+
+* Added `WatchdogConfiguration` with a UTC `Clock` bean using `Clock.systemUTC()`.
+* Added Spring-independent `TraceStatusCalculator`.
+* Added `TraceStatusService`.
+* Added focused unit tests for status calculation.
+
+Implemented status rules:
+
+* `COMPLETED` when `completedAt` is present.
+* `STARTED` when no expectation is active.
+* `WAITING_OTHER_EVENT` when the current time is before the expectation deadline.
+* `TTL_EXPIRED_FOR_EVENT` when the current time is equal to or later than the deadline.
+* Expiration is calculated lazily and is not persisted.
+
+Service behavior:
+
+* Loads trace state using `TraceStateRepository.findById`.
+* Throws `WatchdogNotFoundException` for unknown traces.
+* Uses `Instant.now(clock)` rather than direct system time.
+* Delegates status selection to `TraceStatusCalculator`.
+* Maps all fields required by `TraceStatusResponse`.
+
+Manual review and correction:
+
+* The initial implementation applied completion precedence before validating expectation-field consistency.
+* This allowed a corrupted completed trace with only one expectation field present to be reported as `COMPLETED`.
+* The calculator was corrected to validate expectation/deadline pairing before applying status precedence.
+* A completed trace with a fully paired stale expectation still correctly returns `COMPLETED`.
+* Added tests for completed traces with each possible half-paired expectation state.
+
+Validation performed:
+
+```bash
+git diff --check
+./mvnw -q test
+```
+
+Both commands passed.
+
+Surefire result:
+
+```text
+11 tests, 0 failures, 0 errors
+```
+
+Remaining verification:
+
+* The existing Spring context test logs a PostgreSQL connection warning in the sandbox environment, but the Maven test run succeeds.
+* `TraceStatusService` is not yet exposed through HTTP.
+* Task 6 will remain pending until Tasks 7 and 8 are implemented and the public API is manually exercised.
+
 
 ## Manual Review Responsibilities
 
@@ -808,8 +1107,6 @@ All AI-assisted output will be reviewed for:
 
 This document must be updated after implementation to include:
 
-* Prompts used for later generated or revised Java implementation code.
-* Results of the clean database initialization for the generated DDL.
 * Prompts used for unit tests.
 * Prompts used for Hurl tests.
 * AI-generated code that was accepted.
