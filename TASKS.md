@@ -34,7 +34,7 @@
 
 ## Task 3 — Add domain enums and API contracts
 
-**Status:** Pending
+**Status:** Complete
 
 * Define `EventResult` with `SUCCESS` and `ERROR`.
 * Define `TraceStatus` with:
