@@ -50,7 +50,7 @@
 
 ## Task 4 — Implement request validation and error handling
 
-**Status:** Pending
+**Status:** Complete
 
 * Validate required fields.
 * Validate allowed `result` values.

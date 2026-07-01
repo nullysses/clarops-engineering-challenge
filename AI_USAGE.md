@@ -144,6 +144,148 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 > 3. commands run;
 > 4. any unresolved issues.
 
+### Prompt 6 — Implement Task 4: request validation and API error handling
+
+> Review the current `README.md`, `TASKS.md`, `AI_USAGE.md`, Task 2 DDL, and Task 3 API contracts before editing.
+>
+> Implement only Task 4: request validation and API error handling.
+>
+> ## Required validation
+>
+> Add Bean Validation constraints to `EventRequest`:
+>
+> * `eventId` must be present and non-blank.
+> * `traceId` must be present and non-blank.
+> * `eventName` must be present and non-blank.
+> * `result` must be present.
+> * `occurredAt` must be present.
+> * `nextExpectedEvent` and `nextEventTtlSeconds` must either both be present or both be absent.
+> * When present, `nextExpectedEvent` must not be blank.
+> * When present, `nextEventTtlSeconds` must be greater than zero.
+> * `finalEvent = true` must not define another expected event.
+> * When metadata is present, it must be a JSON object rather than an array or scalar.
+>
+> Invalid enum values, malformed timestamps, malformed JSON, and incompatible JSON types must produce `400 Bad Request`.
+>
+> Preserve the existing behavior where omitted `finalEvent` becomes `false`.
+>
+> ## Cross-field validation
+>
+> Prefer a small, explicit solution.
+>
+> Standard Jakarta Validation annotations should handle individual fields. Cross-field rules may use clearly named `@AssertTrue` methods on `EventRequest` unless a custom class-level constraint produces substantially clearer code.
+>
+> Do not put service or persistence behavior in validation code.
+>
+> ## Exceptions
+>
+> Define minimal exceptions that later tasks can reuse:
+>
+> * a not-found exception mapped to `404 Not Found`;
+> * a conflict exception mapped to `409 Conflict`.
+>
+> Keep them under an appropriate watchdog domain or API exception package.
+>
+> Do not implement the business conditions that throw these exceptions yet.
+>
+> ## Global exception handling
+>
+> Add a `@RestControllerAdvice` that returns the existing `ApiErrorResponse`.
+>
+> Handle at least:
+>
+> * `MethodArgumentNotValidException` → `400 Bad Request`;
+> * `ConstraintViolationException` → `400 Bad Request`;
+> * `HttpMessageNotReadableException` → `400 Bad Request`;
+> * the new not-found exception → `404 Not Found`;
+> * the new conflict exception → `409 Conflict`.
+>
+> Use stable error codes such as:
+>
+> * `VALIDATION_ERROR`;
+> * `INVALID_REQUEST`;
+> * `NOT_FOUND`;
+> * `CONFLICT`.
+>
+> For validation failures, return a concise, useful message. Because `ApiErrorResponse` currently contains one message rather than a list of field errors, choose one deterministic validation message rather than changing the response contract.
+>
+> Do not expose stack traces, internal exception class names, SQL details, or raw Jackson parser messages.
+>
+> ## Scope restrictions
+>
+> Do not add:
+>
+> * controllers;
+> * services;
+> * repositories;
+> * JPA entities;
+> * persistence logic;
+> * status calculation;
+> * event-ingestion logic;
+> * tests;
+> * Hurl files;
+> * new dependencies;
+> * DDL changes, unless a direct inconsistency is discovered.
+>
+> Continue using Jackson 3 types already resolved by the project, including `tools.jackson.databind.JsonNode`.
+>
+> ## Before editing
+>
+> Summarize:
+>
+> 1. the validation approach;
+> 2. the exact files to create or modify;
+> 3. the proposed exception types and error codes;
+> 4. any ambiguity in how validation messages should be selected.
+>
+> Then implement only Task 4.
+>
+> ## After editing
+>
+> Report:
+>
+> 1. files created or modified;
+> 2. validation rules implemented;
+> 3. exception mappings implemented;
+> 4. commands run;
+> 5. compilation or formatting corrections made;
+> 6. unresolved issues.
+>
+> Run at minimum:
+>
+> ```bash
+> git diff --check
+> ./mvnw -q -DskipTests compile
+> ```
+
+### Prompt 7 — Review and correct Task 4
+
+> Review only the Task 4 changes.
+>
+> Check:
+>
+> * `EventRequest` validation annotations and cross-field rules;
+> * deterministic selection of one validation message;
+> * handling of both field-level and class-level validation errors;
+> * malformed JSON, invalid enums, and invalid timestamps returning the generic `INVALID_REQUEST` message;
+> * `WatchdogNotFoundException` mapping to `404`;
+> * `WatchdogConflictException` mapping to `409`;
+> * absence of catch-all `Exception` or `RuntimeException` handlers;
+> * no stack traces, parser details, SQL details, or internal exception names exposed;
+> * no out-of-scope files or dependencies.
+>
+> Make corrections only if a concrete defect is found.
+>
+> Then run:
+>
+> ```bash
+> git diff --check
+> ./mvnw -q -DskipTests compile
+> ```
+>
+> Report findings, corrections, and remaining risks.
+
+
 ## AI-Assisted Areas
 
 So far, AI assistance has been used for:
@@ -367,6 +509,44 @@ Scope review:
 
 * No controllers, services, repositories, JPA entities, exception handlers, validation annotations, tests, persistence code, dependency changes, or DDL changes were added.
 * Task 3 is complete after source review and successful compilation.
+
+## Task 4 Implementation Record
+
+Codex implemented request validation and centralized API error handling.
+
+Generated changes:
+
+* Added field-level Jakarta Validation constraints to `EventRequest`.
+* Added cross-field validation for paired expectation fields, positive TTL, final-event consistency, and object-only metadata.
+* Preserved normalization of omitted `finalEvent` to `false`.
+* Added `WatchdogNotFoundException`.
+* Added `WatchdogConflictException`.
+* Added `ApiExceptionHandler` using the existing `ApiErrorResponse`.
+
+Accepted behavior:
+
+* Validation failures return `400 VALIDATION_ERROR`.
+* Malformed JSON, invalid enum values, invalid timestamps, and incompatible request types return `400 INVALID_REQUEST`.
+* Missing resources return `404 NOT_FOUND`.
+* Business conflicts return `409 CONFLICT`.
+* Parser internals, stack traces, SQL details, and internal exception names are not exposed.
+
+Manual review and correction:
+
+* A follow-up review found no missing validation rules or out-of-scope changes.
+* Deterministic validation-message selection was improved by including field names in the sorting key.
+* Both field-level and object-level validation errors are handled consistently.
+* No catch-all `Exception` or `RuntimeException` handler was added.
+* Tests remain pending because they were outside the scope of Task 4.
+
+Validation performed:
+
+```bash
+git diff --check
+./mvnw -q -DskipTests compile
+```
+
+Both commands passed.
 
 ## Manual Review Responsibilities
 
