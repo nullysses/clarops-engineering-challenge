@@ -925,6 +925,130 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 > git diff --check
 > ./mvnw -q test
 > ```
+### Prompt 13 — Review and correct Task 7
+
+> Review only the Task 7 implementation in:
+>
+> ```text
+> src/main/java/com/clara/challenge/watchdog/service/EventIngestionService.java
+> ```
+>
+> Do not add controllers, Hurl files, DDL changes, broad unit tests, or new dependencies.
+>
+> ## Transaction review
+>
+> Verify that:
+>
+> * one `receivedAt` value is captured per public `ingest` call;
+> * the same value is reused across the single bounded retry;
+> * every ingestion attempt executes inside a new `TransactionTemplate` transaction;
+> * database exceptions are handled only after the failed transaction has rolled back;
+> * no repository read is used to recover from an exception while still inside the failed transaction.
+>
+> ## Duplicate handling
+>
+> Verify that duplicate lookup occurs before trace-state inspection or mutation.
+>
+> Exact duplicate comparison must include:
+>
+> * `eventId`;
+> * `traceId`;
+> * `eventName`;
+> * `result`;
+> * `occurredAt`;
+> * `nextExpectedEvent`;
+> * `nextEventTtlSeconds`;
+> * normalized `finalEvent`;
+> * normalized structured metadata.
+>
+> It must exclude `receivedAt`.
+>
+> Confirm that omitted metadata and `{}` are equivalent and that structured `JsonNode.equals` is used.
+>
+> ## Optimistic-lock race correction
+>
+> Do not immediately translate every optimistic-lock failure to `WatchdogConflictException`.
+>
+> After an optimistic-lock transaction rolls back:
+>
+> 1. re-read the request’s `eventId` in a new transaction;
+>
+> 2. if the event now exists and the logical payload matches, return:
+>
+>    ```java
+>    new EventIngestionResponse(request.eventId(), request.traceId(), true)
+>    ```
+>
+> 3. if the event exists with different logical content, throw `WatchdogConflictException`;
+>
+> 4. only when the event remains absent should the optimistic-lock failure become a concurrency conflict.
+>
+> This is required because two identical concurrent requests can race on the same trace version, with one committing and the other failing optimistic locking before observing the committed `eventId`.
+>
+> ## Integrity-violation recovery
+>
+> Verify that after `DataIntegrityViolationException` rollback:
+>
+> 1. `eventId` is re-read first and resolved as exact or conflicting duplicate when present;
+> 2. a trace-creation retry occurs only if:
+>
+>    * the failed attempt was creating a new trace;
+>    * the event is still absent;
+>    * the trace now exists;
+>    * no retry has already occurred;
+> 3. unrelated or unexplained integrity violations propagate instead of being converted to `409`.
+>
+> Do not parse PostgreSQL error-message text.
+>
+> ## State-transition review
+>
+> Verify this order for existing traces:
+>
+> 1. validate paired persisted expectation fields;
+> 2. reject completed traces;
+> 3. when waiting, reject `receivedAt >= nextExpectedBefore`;
+> 4. then reject an unexpected event name;
+> 5. only after acceptance, update trace facts and persist event history.
+>
+> Rejected events must not mutate state, increment counters, or create history.
+>
+> Confirm:
+>
+> * first-event state is flushed before history insertion because of the foreign key;
+> * final events clear expectation fields;
+> * new expectations use `receivedAt + TTL`;
+> * events without a new expectation clear prior expectation fields;
+> * `result = ERROR` has no independent lifecycle effect;
+> * explicit flush occurs before successful return so optimistic-lock failures are observable.
+>
+> ## Scope and maintainability
+>
+> Check that:
+>
+> * no controller or HTTP response-status logic exists;
+> * no persisted mutable status field was introduced;
+> * no unbounded retry exists;
+> * helper methods have narrow, descriptive responsibilities;
+> * the single service has not duplicated transition logic unnecessarily;
+> * unexpected persistence failures are not hidden as business conflicts.
+>
+> Make corrections only for concrete defects.
+>
+> Run:
+>
+> ```bash
+> git diff --check
+> ./mvnw -q test
+> ```
+>
+> Report:
+>
+> 1. findings;
+> 2. corrections;
+> 3. exact optimistic-lock recovery behavior;
+> 4. exact integrity-violation recovery behavior;
+> 5. remaining risks.
+
 
 ## Initial Design Decisions
 
@@ -1298,6 +1422,62 @@ Remaining verification:
 * The existing Spring context test logs a PostgreSQL connection warning in the sandbox environment, but the Maven test run succeeds.
 * `TraceStatusService` is not yet exposed through HTTP.
 * Task 6 will remain pending until Tasks 7 and 8 are implemented and the public API is manually exercised.
+
+### Task 7 Implementation Record
+
+Codex implemented transactional event ingestion in `EventIngestionService`.
+
+Generated behavior:
+
+* Added `ingest(EventRequest)` returning `EventIngestionResponse`.
+* Captures one server acceptance timestamp per ingestion call.
+* Uses `TransactionTemplate` so race recovery occurs only after rollback.
+* Checks existing `eventId` values before inspecting or mutating trace state.
+* Compares the complete logical request payload while excluding server-generated `receivedAt`.
+* Uses structured Jackson 3 `JsonNode` equality.
+* Normalizes omitted metadata to an empty JSON object.
+* Creates and flushes `TraceState` before inserting first-event history because of the database foreign key.
+* Rejects completed, late, and unexpected events without persisting history or changing trace state.
+* Uses service acceptance time for deadlines, update timestamps, and completion timestamps.
+* Retries concurrent trace creation at most once.
+* Explicitly flushes writes before reporting success.
+
+Manual review identified two concurrency defects:
+
+* Optimistic-lock failures were initially translated directly to `WatchdogConflictException`, which could incorrectly reject an identical concurrent request.
+* An unexplained integrity violation during the bounded retry could be hidden as a business conflict.
+
+Corrections:
+
+* After an optimistic-lock rollback, the service now re-reads `eventId` in a new transaction.
+* A matching persisted event returns an idempotent duplicate response.
+* A differing persisted event produces a conflicting-duplicate response.
+* An optimistic-lock failure becomes a trace-concurrency conflict only when the event remains absent.
+* After an integrity-violation rollback, `eventId` is re-read first.
+* Concurrent trace creation is retried once only when the event remains absent and the trace now exists.
+* Unexplained integrity violations propagate instead of being translated to `409 Conflict`.
+
+Validation performed:
+
+```bash
+git diff --check
+./mvnw -q test
+```
+
+Both commands passed.
+
+Surefire result:
+
+```text
+11 tests, 0 failures, 0 errors
+```
+
+Remaining verification:
+
+* Race-recovery paths do not yet have focused concurrency tests.
+* JSONB persistence and transaction behavior require database-backed exercise.
+* Task 7 remains pending until Task 8 exposes the ingestion API and manual testing succeeds.
+
 
 ## Manual Review Responsibilities
 
