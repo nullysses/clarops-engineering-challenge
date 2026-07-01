@@ -133,7 +133,7 @@
 
 ## Task 9 — Add unit tests
 
-**Status:** Pending
+**Status:** Complete
 
 Testing standard:
 
@@ -162,9 +162,16 @@ Required scenarios:
 * Event after completion is rejected.
 * Conflicting optimistic-lock update is not silently accepted.
 
+Verification completed:
+
+* `EventIngestionServiceTest` contains 30 focused tests.
+* The full Maven suite contains 41 tests with 0 failures and 0 errors.
+* Transaction rollback ordering, bounded retry behavior, duplicate short-circuiting, and timestamp reuse were reviewed.
+* The test file was committed to `develop` and reviewed before Task 9 was marked complete.
+
 ## Task 10 — Add Hurl end-to-end tests
 
-**Status:** Pending
+**Status:** Complete
 
 * Add `hurl/started-flow.hurl`.
 * Add `hurl/waiting-other-event-flow.hurl`.
@@ -181,7 +188,17 @@ Required scenarios:
 * Avoid direct database assertions.
 * Use unique event and trace identifiers per scenario.
 * Keep TTL scenarios deterministic and resistant to timing flakiness.
-* Ensure all scenarios pass from a clean environment.
+* Repeat all scenarios from a clean environment during Task 12 final verification.
+
+Verification completed:
+
+* Hurl 8.0.0 parsed and executed all four required files.
+* The first run completed 20 requests with 0 failures.
+* A repeat run with a distinct `run_id` completed the same 20 requests with 0 failures.
+* The repeat run confirmed identifier isolation across executions.
+* `delay: 3000ms` is used for the deterministic expiration scenario.
+* No API defect was discovered.
+* Clean-volume execution remains explicitly assigned to Task 12.
 
 ## Task 11 — Complete documentation
 

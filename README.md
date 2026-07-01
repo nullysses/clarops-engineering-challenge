@@ -702,30 +702,45 @@ Keep the solution simple.
 
 We are not looking for a perfect event-driven platform. We are looking for a small and thoughtful implementation that shows how you reason about distributed events, TTL expiration, ambiguous requirements, database modeling, AI-assisted development, task decomposition, and testing standards.
 
+---
+
+# Implemented Solution
+
 ## Problem Understanding
 
-The service receives events belonging to distributed flows identified by `traceId`. Each accepted event may:
+The service receives events belonging to distributed operational flows identified by `traceId`.
+Each accepted event may:
 
 * leave the trace active without another expected event;
-* define the next expected event and its TTL;
+* define the next expected event and the TTL for receiving it;
 * complete the trace.
 
-The service persists event history and enough current trace state to answer status queries efficiently. TTL expiration is evaluated when the status endpoint is called; no scheduler or background process is required.
+The implementation persists both accepted event history and the current facts required to answer
+trace-status queries efficiently. Status is derived from those facts rather than stored as a mutable
+status value.
 
-The supported trace statuses are:
+TTL expiration is evaluated lazily when the status endpoint is called. No scheduler, background
+expiration process, or external alerting system is required for this MVP.
 
-* `STARTED`
-* `WAITING_OTHER_EVENT`
-* `TTL_EXPIRED_FOR_EVENT`
-* `COMPLETED`
+The public endpoints include the configured `/api` servlet context path:
+
+```text
+POST /api/events
+GET  /api/traces/{traceId}/status
+```
 
 ## Assumptions and Behavioral Decisions
 
 ### TTL calculation
 
-TTL is calculated from the time the service accepts the event, not from the client-provided `occurredAt`.
+TTL is calculated from the server acceptance time, not from the client-provided `occurredAt`.
 
-This avoids clock-skew and delayed-delivery problems affecting operational deadlines.
+```text
+nextExpectedBefore = receivedAt + nextEventTtlSeconds
+```
+
+This prevents client clock skew, delayed delivery, and backdated events from changing the operational
+deadline.
 
 A trace is expired when:
 
@@ -733,30 +748,56 @@ A trace is expired when:
 currentTime >= nextExpectedBefore
 ```
 
+The exact deadline boundary is therefore expired.
+
 ### Event ordering
 
 Events are processed in service-arrival order.
 
-`occurredAt` is retained as event information but does not determine state-transition order.
+`occurredAt` is retained as event information and persisted in event history, but it does not control
+state-transition ordering.
 
 ### Duplicate events
 
 `eventId` is globally unique.
 
-* An exact duplicate is treated as an idempotent request and does not increment the event count or modify trace state.
-* Reusing an `eventId` with different content returns `409 Conflict`.
+* An exact logical duplicate is idempotent and returns `200 OK` with `duplicate = true`.
+* An exact duplicate does not increment `eventsReceived`, append another history record, or modify
+  trace state.
+* Reusing an `eventId` with different logical content returns `409 Conflict`.
+* Exact duplicates remain idempotent even when the associated trace is completed or expired.
+
+Duplicate equality includes:
+
+* `eventId`;
+* `traceId`;
+* `eventName`;
+* `result`;
+* `occurredAt`;
+* `nextExpectedEvent`;
+* `nextEventTtlSeconds`;
+* normalized `finalEvent`;
+* normalized structured metadata.
+
+The server-generated `receivedAt` value is excluded.
+
+Omitted metadata is normalized to `{}`. An omitted metadata value and an explicit empty object are
+therefore equivalent. Metadata comparison uses structured JSON equality, so object-property order is
+irrelevant.
 
 ### Unexpected events
 
 When a trace is waiting for a specific event, another event name is rejected with `409 Conflict`.
 
-The rejected event is not persisted and does not modify trace state.
+The rejected event is not persisted and does not modify the latest-event facts, expectation,
+completion state, or accepted-event count.
 
 ### Late events
 
 If the expected event arrives at or after its deadline, it is rejected with `409 Conflict`.
 
-The trace remains expired and is not automatically revived.
+The event does not revive the trace. The trace continues to report
+`TTL_EXPIRED_FOR_EVENT`, and its state remains unchanged.
 
 ### Completed traces
 
@@ -764,62 +805,584 @@ A first event may also be a final event.
 
 After completion:
 
-* exact duplicate events remain idempotent;
-* new events are rejected with `409 Conflict`;
+* exact duplicates remain idempotent;
+* new non-duplicate events are rejected with `409 Conflict`;
+* pending expectation fields are cleared;
 * the trace is always reported as `COMPLETED`, never expired.
 
 ### Event result
 
-`result` describes the outcome of the individual event and does not directly determine trace status.
+`result` describes the outcome of the individual event and does not independently determine trace
+lifecycle.
 
 An event with `result = ERROR` may still:
 
 * define another expected event;
+* leave the trace active without an expectation;
 * complete the trace.
 
 ### Final-event consistency
 
-An event with `finalEvent = true` must not define `nextExpectedEvent` or `nextEventTtlSeconds`.
+An event with `finalEvent = true` must not define `nextExpectedEvent` or
+`nextEventTtlSeconds`.
 
-Such contradictory requests return `400 Bad Request`.
+Contradictory requests return `400 Bad Request`.
 
 ### Next-event fields
 
 `nextExpectedEvent` and `nextEventTtlSeconds` must either both be provided or both be absent.
 
-TTL must be greater than zero.
+When present:
 
-### STARTED semantics
+* `nextExpectedEvent` must be non-blank;
+* `nextEventTtlSeconds` must be greater than zero.
+
+### `STARTED` semantics
 
 `STARTED` means that the trace is active, not completed, and currently has no expected next event.
 
-It may therefore apply after more than one accepted event, not only immediately after the first event.
+It may apply after more than one accepted event, not only immediately after the first event. An
+accepted event without a new expectation clears any previous expectation and leaves the active trace
+in `STARTED`.
 
 ### Metadata
 
 Event metadata is persisted as PostgreSQL `JSONB`.
 
-The service does not interpret metadata for state transitions.
+Metadata must be a JSON object. Arrays and scalar values are rejected. The service stores metadata
+but does not interpret it for state transitions.
 
 ### Missing traces
 
 Querying an unknown `traceId` returns `404 Not Found`.
 
-### Consistency and concurrency
+## Technical Design
 
-Event persistence and trace-state updates occur in one database transaction.
+The implementation uses a small layered structure:
 
-Database uniqueness constraints protect event IDs, and optimistic locking protects concurrent updates to the same trace.
+```text
+API controllers and contracts
+        |
+        v
+application services
+        |
+        v
+domain status calculation
+        |
+        v
+Spring Data JPA repositories
+        |
+        v
+PostgreSQL
+```
 
-## HTTP Response Decisions
+### API layer
 
-| Situation                             |          Response |
-| ------------------------------------- | ----------------: |
-| New event accepted                    |     `201 Created` |
-| Exact duplicate accepted idempotently |          `200 OK` |
-| Invalid request                       | `400 Bad Request` |
-| Unexpected event                      |    `409 Conflict` |
-| Late expected event                   |    `409 Conflict` |
-| Conflicting duplicate event ID        |    `409 Conflict` |
-| New event after completion            |    `409 Conflict` |
-| Trace not found                       |   `404 Not Found` |
+The API layer contains:
+
+* request and response records;
+* Jakarta Bean Validation constraints;
+* `EventController`;
+* `TraceStatusController`;
+* centralized exception handling through `ApiExceptionHandler`.
+
+Controllers perform request binding, validation, service delegation, and HTTP success-status
+selection. They do not contain persistence, duplicate comparison, deadline calculation, or
+state-transition logic.
+
+### Service layer
+
+`EventIngestionService` coordinates:
+
+* duplicate lookup;
+* metadata normalization;
+* trace creation and updates;
+* lifecycle validation;
+* accepted event-history persistence;
+* transaction boundaries;
+* optimistic-lock and uniqueness-race recovery.
+
+`TraceStatusService` loads persisted trace facts, obtains the current time from an injected UTC
+`Clock`, delegates status selection to `TraceStatusCalculator`, and maps the result to
+`TraceStatusResponse`.
+
+### Domain layer
+
+`TraceStatusCalculator` is Spring-independent and side-effect free. It derives status from:
+
+* `completedAt`;
+* `nextExpectedEvent`;
+* `nextExpectedBefore`;
+* the supplied current time.
+
+No mutable status column is stored.
+
+### Time handling
+
+All watchdog lifecycle timestamps use an injected UTC `Clock`.
+
+One server acceptance timestamp is captured for each public ingestion call and reused for:
+
+* trace creation or update timestamps;
+* event-history `receivedAt`;
+* completion;
+* expectation-deadline calculation;
+* the single bounded trace-creation retry.
+
+## Database Model
+
+The schema is defined in:
+
+```text
+docker/init-scripts/db/01-init-schema.sql
+```
+
+The application uses the existing PostgreSQL schema:
+
+```text
+clarops_challenge_schema
+```
+
+### `trace_state`
+
+`trace_state` stores the latest accepted facts for each trace:
+
+| Column | Purpose |
+| --- | --- |
+| `trace_id` | Natural primary key for the distributed flow |
+| `last_event_*` | Latest accepted event facts |
+| `next_expected_event` | Current expected event name |
+| `next_expected_before` | Server-calculated expectation deadline |
+| `completed_at` | Completion fact and timestamp |
+| `events_received` | Count of accepted, non-duplicate events |
+| `created_at`, `updated_at` | Trace audit timestamps |
+| `version` | Optimistic-lock version |
+
+Status is derived from these facts. There is no persisted mutable status column or separate completion
+boolean.
+
+### `trace_event`
+
+`trace_event` stores one immutable history row for every newly accepted event:
+
+| Column | Purpose |
+| --- | --- |
+| `event_id` | Global event primary key |
+| `trace_id` | Owning trace, enforced by foreign key |
+| `event_name`, `result` | Event identity and outcome |
+| `occurred_at` | Client-provided event time |
+| `received_at` | Server acceptance time |
+| `next_expected_event`, `next_event_ttl_seconds` | Logical request expectation fields |
+| `final_event` | Whether this event completed the trace |
+| `metadata` | Structured PostgreSQL `JSONB` object |
+
+The full logical request is retained so exact and conflicting duplicate events can be distinguished
+without relying solely on a payload hash.
+
+### Constraints and index
+
+The database enforces:
+
+* valid event-result values;
+* paired expectation fields;
+* positive TTL values;
+* completed traces without pending expectations;
+* positive accepted-event counts;
+* non-negative optimistic-lock versions;
+* metadata containing a JSON object;
+* event history referencing an existing trace.
+
+The primary keys provide final uniqueness safeguards for `traceId` and `eventId`.
+
+The index:
+
+```text
+idx_trace_event_trace_id_received_at
+```
+
+supports ordered event-history access by trace. No deadline-scan index is included because this MVP
+uses primary-key trace lookup and lazy expiration rather than scanning pending traces.
+
+### Why two tables?
+
+Keeping both current state and event history provides:
+
+* constant-size status lookup by `traceId`;
+* accepted-event audit history;
+* complete logical duplicate comparison;
+* database-level uniqueness for event IDs;
+* no need to rebuild current state from the full event stream on every query.
+
+## State-Transition Rules
+
+| Current condition | Incoming request | Result |
+| --- | --- | --- |
+| Trace does not exist | Non-final event without expectation | Create trace as `STARTED` |
+| Trace does not exist | Non-final event with expectation | Create trace as `WAITING_OTHER_EVENT` |
+| Trace does not exist | Final event | Create trace as `COMPLETED` |
+| Active trace without expectation | New accepted event | Apply the new event outcome |
+| Waiting before deadline | Expected event | Accept and apply its next outcome |
+| Waiting before deadline | Unexpected event | `409 Conflict`; state unchanged |
+| Waiting at or after deadline | Expected event | `409 Conflict`; trace remains expired |
+| Completed trace | New non-duplicate event | `409 Conflict`; state unchanged |
+| Any trace state | Exact duplicate event | `200 OK`; state unchanged |
+| Any trace state | Same `eventId`, different payload | `409 Conflict`; state unchanged |
+
+For an accepted event, its outcome is applied as follows:
+
+* `finalEvent = true` sets `completedAt` and clears expectation fields;
+* a new expectation stores its name and `receivedAt + TTL`;
+* no new expectation clears prior expectation fields and leaves the trace active;
+* `eventsReceived` increments exactly once.
+
+## Consistency and Concurrency
+
+Each newly accepted event updates `trace_state` and inserts `trace_event` in one database transaction.
+A partial update cannot be returned as a successful ingestion.
+
+Duplicate lookup occurs before trace-state inspection or mutation.
+
+Concurrency safeguards are:
+
+* `trace_event.event_id` primary-key uniqueness for concurrent duplicate insertion;
+* `trace_state.trace_id` primary-key uniqueness for concurrent first-event trace creation;
+* `@Version` optimistic locking for concurrent updates to an existing trace;
+* post-rollback event lookup to recognize a concurrently committed exact duplicate;
+* one bounded retry when a concurrent request created the trace first;
+* propagation of unexplained integrity failures rather than hiding them as business conflicts.
+
+The first trace-state row is flushed before inserting its event-history row because
+`trace_event.trace_id` has a foreign key to `trace_state.trace_id`.
+
+## HTTP API
+
+### Submit an event
+
+```http
+POST /api/events
+Content-Type: application/json
+```
+
+Example request:
+
+```json
+{
+  "eventId": "evt-001",
+  "traceId": "trace-123",
+  "eventName": "APPLICATION_RECEIVED",
+  "result": "SUCCESS",
+  "occurredAt": "2026-06-15T10:00:00Z",
+  "nextExpectedEvent": "RULES_EVALUATED",
+  "nextEventTtlSeconds": 120,
+  "finalEvent": false,
+  "metadata": {
+    "country": "MX",
+    "entityId": "company-123"
+  }
+}
+```
+
+Newly accepted event — `201 Created`:
+
+```json
+{
+  "eventId": "evt-001",
+  "traceId": "trace-123",
+  "duplicate": false
+}
+```
+
+Exact duplicate — `200 OK`:
+
+```json
+{
+  "eventId": "evt-001",
+  "traceId": "trace-123",
+  "duplicate": true
+}
+```
+
+### Query trace status
+
+```http
+GET /api/traces/trace-123/status
+```
+
+Example waiting response — `200 OK`:
+
+```json
+{
+  "traceId": "trace-123",
+  "status": "WAITING_OTHER_EVENT",
+  "lastEventId": "evt-001",
+  "lastEventName": "APPLICATION_RECEIVED",
+  "lastEventResult": "SUCCESS",
+  "nextExpectedEvent": "RULES_EVALUATED",
+  "nextExpectedBefore": "2026-06-15T10:02:00Z",
+  "eventsReceived": 1,
+  "completedAt": null
+}
+```
+
+Example completed response — `200 OK`:
+
+```json
+{
+  "traceId": "trace-123",
+  "status": "COMPLETED",
+  "lastEventId": "evt-002",
+  "lastEventName": "RULES_EVALUATED",
+  "lastEventResult": "SUCCESS",
+  "nextExpectedEvent": null,
+  "nextExpectedBefore": null,
+  "eventsReceived": 2,
+  "completedAt": "2026-06-15T10:01:00Z"
+}
+```
+
+### Error response
+
+Errors use one consistent contract:
+
+```json
+{
+  "code": "CONFLICT",
+  "message": "Unexpected event. Expected RULES_EVALUATED",
+  "timestamp": "2026-06-15T10:00:30Z"
+}
+```
+
+Stable error codes are:
+
+| Code | HTTP status | Meaning |
+| --- | ---: | --- |
+| `VALIDATION_ERROR` | 400 | A valid JSON request violates field or cross-field validation |
+| `INVALID_REQUEST` | 400 | Malformed JSON or incompatible JSON value |
+| `NOT_FOUND` | 404 | The requested trace does not exist |
+| `CONFLICT` | 409 | Duplicate-content or lifecycle conflict |
+
+### HTTP response summary
+
+| Situation | Response |
+| --- | ---: |
+| New event accepted | `201 Created` |
+| Exact duplicate accepted idempotently | `200 OK` |
+| Existing trace status | `200 OK` |
+| Invalid request | `400 Bad Request` |
+| Unknown trace | `404 Not Found` |
+| Unexpected event | `409 Conflict` |
+| Late expected event | `409 Conflict` |
+| Conflicting duplicate event ID | `409 Conflict` |
+| New event after completion | `409 Conflict` |
+
+## Running the Project
+
+Detailed environment notes are also available in [SETUP.md](SETUP.md).
+
+### Prerequisites
+
+* Java 21;
+* Docker or Docker Desktop;
+* the included Maven wrapper;
+* Hurl 8.0.0 or later for end-to-end tests.
+
+### Configure PostgreSQL
+
+Create the local Docker environment file:
+
+```bash
+cp docker/example.env docker/.env
+```
+
+The default application datasource is:
+
+```text
+jdbc:postgresql://localhost:5432/clarops_challenge
+username: clarops
+password: CHANGE_ME
+```
+
+The corresponding values in `docker/.env` must match
+`src/main/resources/application.yaml`.
+
+### Start the application
+
+Spring Boot can start the configured Docker Compose stack automatically:
+
+```bash
+./mvnw spring-boot:run
+```
+
+Verify the application and database connection:
+
+```bash
+curl http://localhost:8080/api/health
+```
+
+Expected response:
+
+```text
+clarops sr engineer challenge
+```
+
+### Start PostgreSQL manually
+
+When automatic Docker Compose startup is unavailable:
+
+```bash
+docker compose -f docker/docker-compose.yml up -d
+docker compose -f docker/docker-compose.yml ps
+```
+
+Then start the application:
+
+```bash
+./mvnw spring-boot:run
+```
+
+### Reset the database
+
+The initialization SQL runs only when PostgreSQL creates a new data volume.
+
+```bash
+docker compose -f docker/docker-compose.yml down -v
+docker compose -f docker/docker-compose.yml up -d
+```
+
+This is destructive to the local challenge database.
+
+## Unit Tests
+
+Run the complete unit suite:
+
+```bash
+./mvnw -q test
+```
+
+Current verified result:
+
+```text
+41 tests, 0 failures, 0 errors
+```
+
+The focused tests cover:
+
+* status calculation and exact expiration boundaries;
+* first-event trace creation;
+* normal trace transitions;
+* exact and conflicting duplicates;
+* metadata normalization and property-order independence;
+* unexpected, late, and post-completion rejection;
+* optimistic-lock recovery behavior;
+* concurrent event-insertion recovery behavior;
+* bounded concurrent trace-creation retry;
+* transaction commit and rollback ordering;
+* single acceptance-timestamp reuse.
+
+The concurrency-recovery tests use mocked repositories and a mocked transaction manager. They verify
+service behavior but are not true concurrent PostgreSQL integration tests.
+
+Run formatting and the full Maven verification lifecycle:
+
+```bash
+./mvnw clean spotless:apply verify
+```
+
+## Hurl End-to-End Tests
+
+The Hurl suite validates only the public HTTP API. It does not query PostgreSQL directly.
+
+Required files:
+
+```text
+hurl/started-flow.hurl
+hurl/waiting-other-event-flow.hurl
+hurl/completed-flow.hurl
+hurl/ttl-expired-flow.hurl
+```
+
+Coverage includes:
+
+* `STARTED`;
+* `WAITING_OTHER_EVENT`;
+* `COMPLETED`;
+* `TTL_EXPIRED_FOR_EVENT`;
+* exact duplicate idempotency;
+* conflicting duplicate rejection;
+* unexpected-event rejection;
+* late-event rejection;
+* event-after-completion rejection;
+* rejected requests leaving public trace state unchanged.
+
+With PostgreSQL and the application running, execute:
+
+```bash
+RUN_ID="hurl-$(date +%s)"
+
+hurl --test \
+  --error-format long \
+  --variable base_url=http://localhost:8080/api \
+  --variable run_id="$RUN_ID" \
+  hurl/started-flow.hurl \
+  hurl/waiting-other-event-flow.hurl \
+  hurl/completed-flow.hurl \
+  hurl/ttl-expired-flow.hurl
+```
+
+The expiration scenario uses a two-second TTL and a Hurl request delay of `3000ms`. The other flows
+use long TTL values to avoid timing flakiness.
+
+Current verified result:
+
+```text
+4 files
+20 requests
+0 failures
+```
+
+The complete suite was also executed a second time with a different `run_id`, confirming that the
+scenarios are isolated from prior test data.
+
+Task 12 repeats this suite after resetting the PostgreSQL volume.
+
+## Known Limitations
+
+* Expiration is evaluated only when trace status is queried; there is no proactive alert delivery.
+* The service tracks one current expected event per trace rather than arbitrary workflow graphs.
+* There is no authentication, authorization, or tenant isolation.
+* There is no public event-history endpoint or pagination.
+* The SQL initialization script is suitable for the challenge but is not a production migration
+  strategy.
+* Concurrency-recovery unit tests do not execute real simultaneous PostgreSQL transactions.
+* Concurrent trace creation is retried at most once.
+* Hurl expiration validation necessarily uses wall-clock delay and does not test the exact boundary;
+  the exact boundary is covered deterministically by unit tests.
+* Error timestamps currently use direct system time rather than the watchdog's injected `Clock`.
+* The service assumes a single PostgreSQL database as the source of truth and does not publish
+  accepted events through an outbox or message broker.
+
+## Possible Production Improvements
+
+With more time, the design could be extended with:
+
+* Flyway or Liquibase migrations and backward-compatible schema evolution;
+* Testcontainers-based PostgreSQL integration tests, including true concurrent race scenarios;
+* an outbox pattern for reliably publishing accepted events;
+* scheduled deadline scanning and alert delivery when proactive notification is required;
+* a deadline index if pending traces must be scanned rather than queried by ID;
+* authentication, authorization, and tenant-aware identifiers;
+* metrics, structured logging, distributed tracing, and operational dashboards;
+* configurable retry and conflict policies;
+* a public, paginated event-history endpoint;
+* archived or partitioned event-history storage for long retention periods;
+* canonical payload fingerprints as an optimization while retaining logical-field comparison as the
+  correctness source;
+* rate limiting and request-size limits;
+* richer flow definitions when multiple dynamic expectations or branching workflows are required.
+
+## Project Documentation
+
+* [SETUP.md](SETUP.md) — environment and startup details.
+* [TASKS.md](TASKS.md) — scoped implementation plan and completion status.
+* [AI_USAGE.md](AI_USAGE.md) — AI tools, prompts, accepted and rejected suggestions, corrections, and
+  review records.

@@ -1875,7 +1875,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 > Review sequential Mockito stubbing carefully.
 >
-> ### Concurrent event insertion
+> #### Concurrent event insertion
 >
 > Verify:
 >
@@ -1886,7 +1886,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 > * matching content returns duplicate;
 > * conflicting content throws conflict.
 >
-> ### Concurrent trace creation retry
+> #### Concurrent trace creation retry
 >
 > Verify the sequence:
 >
@@ -1910,7 +1910,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 > * the clock is not read again;
 > * the retry updates the existing trace rather than attempting another new trace creation.
 >
-> ### Retry optimistic-lock recovery
+> #### Retry optimistic-lock recovery
 >
 > Verify:
 >
@@ -1925,7 +1925,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 > Ensure each repeated `findById` call has the intended sequential result.
 >
-> ### Retry integrity propagation
+> #### Retry integrity propagation
 >
 > Verify that:
 >
@@ -1935,7 +1935,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 > * the exception is not translated into `WatchdogConflictException`;
 > * no third ingestion attempt occurs.
 >
-> ### Unrelated integrity failure
+> #### Unrelated integrity failure
 >
 > Verify that:
 >
@@ -2022,6 +2022,724 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 > 7. final test counts;
 > 8. any remaining risk.
 
+### Prompt 18 — Implement Task 10: Hurl end-to-end tests
+
+> Review the current `README.md`, `TASKS.md`, `AI_USAGE.md`, API contracts, controllers, exception handling, and service behavior before editing.
+>
+> Implement only Task 10: public HTTP end-to-end tests using Hurl.
+>
+> Do not mark Task 10 complete in `TASKS.md`. The scenarios must be reviewed and executed successfully before the task is closed.
+>
+> #### Exact file scope
+>
+> Create:
+>
+> ```text
+> hurl/started-flow.hurl
+> hurl/waiting-other-event-flow.hurl
+> hurl/completed-flow.hurl
+> hurl/ttl-expired-flow.hurl
+> ```
+>
+> Do not create additional Hurl files unless a concrete limitation prevents the required scenarios from being expressed clearly in these four files.
+>
+> Do not modify:
+>
+> * production Java code;
+> * controllers;
+> * API contracts;
+> * validation;
+> * exception handling;
+> * repositories;
+> * JPA entities;
+> * DDL;
+> * application configuration;
+> * Maven dependencies;
+> * unit tests;
+> * `README.md`;
+> * `TASKS.md`;
+> * `AI_USAGE.md`.
+>
+> If a public API defect prevents a valid Hurl scenario, stop and report the defect before changing production code.
+>
+> #### Public API only
+>
+> Exercise only:
+>
+> ```text
+> POST {{base_url}}/events
+> GET {{base_url}}/traces/{traceId}/status
+> ```
+>
+> Do not:
+>
+> * query PostgreSQL directly;
+> * inspect database tables;
+> * rely on implementation classes;
+> * call repositories;
+> * assert internal transaction behavior;
+> * use test-only endpoints;
+> * add database cleanup endpoints;
+> * use shell commands inside the Hurl files.
+>
+> Assert only observable HTTP behavior.
+>
+> #### Variables and scenario isolation
+>
+> Use:
+>
+> ```text
+> {{base_url}}
+> {{run_id}}
+> ```
+>
+> Construct explicit scenario-prefixed identifiers, for example:
+>
+> ```text
+> task10-started-trace-{{run_id}}
+> task10-waiting-trace-{{run_id}}
+> task10-completed-trace-{{run_id}}
+> task10-expired-trace-{{run_id}}
+> ```
+>
+> Event IDs must also be unique per scenario and per logical event.
+>
+> Do not share a trace between Hurl files.
+>
+> Each Hurl file must:
+>
+> * be independent of execution order;
+> * contain all requests required for its scenario;
+> * use IDs distinct from the other files;
+> * avoid relying on data created by another Hurl file.
+>
+> Use fixed valid `occurredAt` values. Lifecycle timing is based on server acceptance time, so client timestamps must not be used to control TTL behavior.
+>
+> #### Assertion standard
+>
+> For every JSON response, assert:
+>
+> * the expected HTTP status;
+> * `Content-Type` contains `application/json`;
+> * the stable response fields relevant to the scenario.
+>
+> For successful event ingestion, assert:
+>
+> ```text
+> eventId
+> traceId
+> duplicate
+> ```
+>
+> For trace status, assert the relevant fields from:
+>
+> ```text
+> traceId
+> status
+> lastEventId
+> lastEventName
+> lastEventResult
+> nextExpectedEvent
+> nextExpectedBefore
+> eventsReceived
+> completedAt
+> ```
+>
+> For conflict responses, assert:
+>
+> ```text
+> code == "CONFLICT"
+> message
+> timestamp
+> ```
+>
+> Assert stable exact messages where the production contract already supplies a deterministic message.
+>
+> Do not assert exact dynamically generated timestamps. Assert their presence, absence, or valid string shape only where useful.
+>
+> Do not overfit to JSON property order.
+>
+> #### `started-flow.hurl`
+>
+> Cover:
+>
+> 1. Submit the first non-final event without another expectation.
+>
+>    Expected:
+>
+>    * `201 Created`;
+>    * `duplicate = false`.
+> 2. Query the trace status.
+>
+>    Expected:
+>
+>    * `200 OK`;
+>    * `status = STARTED`;
+>    * latest-event fields match the submitted event;
+>    * `eventsReceived = 1`;
+>    * no current expected event;
+>    * no expectation deadline;
+>    * no completion timestamp.
+> 3. Submit the exact same logical event again.
+>
+>    Expected:
+>
+>    * `200 OK`;
+>    * `duplicate = true`.
+> 4. Query status again.
+>
+>    Expected:
+>
+>    * the trace remains `STARTED`;
+>    * `eventsReceived` remains `1`;
+>    * latest-event facts remain unchanged.
+> 5. Reuse the same `eventId` with different logical content.
+>
+>    Expected:
+>
+>    * `409 Conflict`;
+>    * `code = CONFLICT`;
+>    * message identifies reuse of the event ID with different logical content.
+>
+> This file covers:
+>
+> * first-event creation;
+> * `STARTED`;
+> * exact idempotent duplicate;
+> * conflicting duplicate.
+>
+> #### `waiting-other-event-flow.hurl`
+>
+> Cover:
+>
+> 1. Submit a first event defining:
+>
+>    ```text
+>    nextExpectedEvent = RULES_EVALUATED
+>    nextEventTtlSeconds = 120
+>    ```
+>
+>    Expected:
+>
+>    * `201 Created`;
+>    * `duplicate = false`.
+> 2. Query status immediately.
+>
+>    Expected:
+>
+>    * `status = WAITING_OTHER_EVENT`;
+>    * `nextExpectedEvent = RULES_EVALUATED`;
+>    * an expectation deadline is present;
+>    * `eventsReceived = 1`;
+>    * `completedAt` is absent.
+> 3. Submit a new event with a different event ID but an unexpected event name.
+>
+>    Expected:
+>
+>    * `409 Conflict`;
+>    * `code = CONFLICT`;
+>    * message identifies the expected event.
+> 4. Query status again.
+>
+>    Expected:
+>
+>    * the trace remains `WAITING_OTHER_EVENT`;
+>    * the original expected event remains unchanged;
+>    * `eventsReceived` remains `1`;
+>    * latest-event facts still refer to the first accepted event.
+>
+> The TTL must be long enough that ordinary test execution cannot accidentally expire the trace.
+>
+> This file covers:
+>
+> * `WAITING_OTHER_EVENT`;
+> * status before deadline;
+> * unexpected-event rejection;
+> * rejected event not mutating public trace state.
+>
+> #### `completed-flow.hurl`
+>
+> Cover:
+>
+> 1. Submit a first event defining:
+>
+>    ```text
+>    nextExpectedEvent = PAYMENT_CONFIRMED
+>    nextEventTtlSeconds = 120
+>    ```
+>
+> 2. Query status and confirm `WAITING_OTHER_EVENT`.
+>
+> 3. Submit the expected event with:
+>
+>    ```text
+>    finalEvent = true
+>    ```
+>
+>    Expected:
+>
+>    * `201 Created`;
+>    * `duplicate = false`.
+>
+> 4. Query status.
+>
+>    Expected:
+>
+>    * `status = COMPLETED`;
+>    * latest-event fields match the final event;
+>    * `eventsReceived = 2`;
+>    * no expected event remains;
+>    * no expectation deadline remains;
+>    * `completedAt` is present.
+>
+> 5. Submit another new event after completion.
+>
+>    Expected:
+>
+>    * `409 Conflict`;
+>    * `code = CONFLICT`;
+>    * message states that the trace is already completed.
+>
+> 6. Query status again.
+>
+>    Expected:
+>
+>    * the trace remains `COMPLETED`;
+>    * `eventsReceived` remains `2`;
+>    * latest-event facts remain those of the final accepted event.
+>
+> This file covers:
+>
+> * expected-event acceptance;
+> * final-event completion;
+> * `COMPLETED`;
+> * event-after-completion rejection;
+> * rejected event not mutating public trace state.
+>
+> #### `ttl-expired-flow.hurl`
+>
+> Cover:
+>
+> 1. Submit a first event defining:
+>
+>    ```text
+>    nextExpectedEvent = DELIVERY_CONFIRMED
+>    nextEventTtlSeconds = 2
+>    ```
+>
+> 2. Query status immediately.
+>
+>    Expected:
+>
+>    * `status = WAITING_OTHER_EVENT`.
+>
+> 3. Before the next status request, use a request-level Hurl delay long enough to exceed the TTL reliably:
+>
+>    ```text
+>    delay: 3 s
+>    ```
+>
+> 4. Query status after the delay.
+>
+>    Expected:
+>
+>    * `status = TTL_EXPIRED_FOR_EVENT`;
+>    * `nextExpectedEvent = DELIVERY_CONFIRMED`;
+>    * `eventsReceived = 1`;
+>    * `completedAt` remains absent.
+>
+> 5. Submit the formerly expected event with a new event ID.
+>
+>    Expected:
+>
+>    * `409 Conflict`;
+>    * `code = CONFLICT`;
+>    * message states that the expected event arrived after the TTL deadline.
+>
+> 6. Query status again.
+>
+>    Expected:
+>
+>    * the trace remains `TTL_EXPIRED_FOR_EVENT`;
+>    * `eventsReceived` remains `1`;
+>    * latest-event facts remain those of the original accepted event.
+>
+> Do not attempt to test the exact deadline boundary over HTTP. Exact-boundary semantics are already covered by deterministic unit tests; an end-to-end request cannot reliably arrive at the precise instant.
+>
+> Do not use an external shell `sleep` command. Keep the delay in the Hurl request options.
+>
+> This file covers:
+>
+> * waiting before expiration;
+> * expiration after the deadline;
+> * late expected-event rejection;
+> * rejected late event not mutating public trace state.
+>
+> #### Request payloads
+>
+> Use complete, readable JSON objects with:
+>
+> ```text
+> eventId
+> traceId
+> eventName
+> result
+> occurredAt
+> ```
+>
+> Add only the scenario-relevant optional fields:
+>
+> ```text
+> nextExpectedEvent
+> nextEventTtlSeconds
+> finalEvent
+> metadata
+> ```
+>
+> Include structured metadata in at least one successful flow.
+>
+> For the exact duplicate in `started-flow.hurl`, resend metadata with its object properties in a different order while preserving the same logical value. Assert that the request is still treated as an exact duplicate.
+>
+> Do not use arrays, scalar metadata, or invalid contracts in Task 10 unless required by the existing checklist.
+>
+> #### Determinism and flakiness controls
+>
+> * Use a long TTL, such as `120` seconds, for waiting and completed flows.
+> * Use a short TTL with a larger explicit delay for the expiration flow.
+> * Do not use a TTL of zero or a negative TTL.
+> * Do not depend on client `occurredAt` for expiration.
+> * Do not assert exact server timestamps.
+> * Do not run the four files in parallel unless their independence has been verified.
+> * Do not use retries to conceal an incorrect status.
+>
+> #### Before editing
+>
+> Report:
+>
+> 1. the exact files to create;
+> 2. how the five conflict cases are distributed among the four files;
+> 3. the identifier scheme;
+> 4. the Hurl variable strategy;
+> 5. the assertions used for success, status, and error responses;
+> 6. the TTL timing strategy;
+> 7. any ambiguity or environment limitation.
+>
+> Then implement only Task 10.
+>
+> #### Validation
+>
+> Confirm the installed Hurl version:
+>
+> ```bash
+> hurl --version
+> ```
+>
+> Run the existing unit suite:
+>
+> ```bash
+> ./mvnw -q test
+> ```
+>
+> With PostgreSQL and the application already running against a clean database, execute:
+>
+> ```bash
+> hurl --test \
+>   --variable base_url=http://localhost:8080/api \
+>   --variable run_id=task10-$(date +%s) \
+>   hurl/started-flow.hurl \
+>   hurl/waiting-other-event-flow.hurl \
+>   hurl/completed-flow.hurl \
+>   hurl/ttl-expired-flow.hurl
+> ```
+>
+> Also run:
+>
+> ```bash
+> git diff --check
+> ```
+>
+> Do not reset Docker volumes automatically.
+>
+> If the application or Hurl executable is unavailable, report that execution limitation explicitly. Do not claim the scenarios passed unless Hurl actually executed them successfully.
+>
+> #### After editing
+>
+> Report:
+>
+> 1. files created or modified;
+> 2. requests and assertions in each Hurl file;
+> 3. conflict coverage;
+> 4. TTL determinism strategy;
+> 5. Hurl version;
+> 6. commands run;
+> 7. scenario count and execution result;
+> 8. any API defect discovered;
+> 9. remaining end-to-end risk.
+>
+> Do not mark Task 10 complete yet.
+
+### Prompt 19 — Review, correct, and execute Task 10 Hurl tests
+
+> Review only the Task 10 changes in:
+>
+> ```text
+> hurl/started-flow.hurl
+> hurl/waiting-other-event-flow.hurl
+> hurl/completed-flow.hurl
+> hurl/ttl-expired-flow.hurl
+> ```
+>
+> Do not modify production Java code, DDL, configuration, dependencies, unit tests, `README.md`, `TASKS.md`, or `AI_USAGE.md`.
+>
+> Do not mark Task 10 complete yet.
+>
+> #### General file review
+>
+> Verify that:
+>
+> * exactly the four required Hurl files were created;
+> * every file is valid UTF-8 Hurl syntax;
+> * every file is independent of execution order;
+> * every file uses a distinct scenario prefix;
+> * `{{base_url}}` and `{{run_id}}` are used consistently;
+> * event IDs are unique for different logical events;
+> * no file depends on data created by another file;
+> * only public HTTP endpoints are exercised;
+> * there are no direct database assertions or shell commands inside the files.
+>
+> #### Request syntax
+>
+> Verify that each JSON request:
+>
+> * sends `Content-Type: application/json`;
+> * uses valid JSON;
+> * includes the required request fields;
+> * includes only scenario-relevant optional fields;
+> * uses fixed valid `occurredAt` timestamps;
+> * does not attempt to control TTL using `occurredAt`.
+>
+> Verify that URLs resolve to:
+>
+> ```text
+> POST {{base_url}}/events
+> GET {{base_url}}/traces/{traceId}/status
+> ```
+>
+> The command-line value of `base_url` will already include `/api`.
+>
+> Do not duplicate `/api` inside the Hurl files.
+>
+> #### Response assertion syntax
+>
+> Verify that each response uses valid Hurl response syntax:
+>
+> ```text
+> HTTP 200
+> HTTP 201
+> HTTP 409
+> ```
+>
+> Do not include HTTP reason phrases after the status code.
+>
+> Verify that `[Asserts]` expressions use valid Hurl query and predicate syntax.
+>
+> Confirm that JSON response assertions target the actual API field names:
+>
+> ```text
+> eventId
+> traceId
+> duplicate
+> status
+> lastEventId
+> lastEventName
+> lastEventResult
+> nextExpectedEvent
+> nextExpectedBefore
+> eventsReceived
+> completedAt
+> code
+> message
+> timestamp
+> ```
+>
+> Verify that:
+>
+> * dynamic timestamps are not compared to fixed exact values;
+> * nullable JSON fields are asserted using valid Hurl null checks;
+> * timestamp shape assertions are valid and not excessively restrictive;
+> * `Content-Type` assertions accept the application’s actual JSON media type, including a possible charset parameter;
+> * JSON property ordering is never asserted.
+>
+> #### `started-flow.hurl`
+>
+> Verify this sequence:
+>
+> 1. first event without an expectation returns `201` and `duplicate = false`;
+> 2. status returns `STARTED`;
+> 3. exact duplicate returns `200` and `duplicate = true`;
+> 4. duplicate metadata contains the same object fields in a different order;
+> 5. status still reports one accepted event;
+> 6. conflicting reuse of the same `eventId` returns `409 CONFLICT`.
+>
+> Confirm that the conflicting request differs in logical payload rather than only JSON object property order.
+>
+> Confirm the stable conflict message:
+>
+> ```text
+> Event ID already exists with different logical content
+> ```
+>
+> #### `waiting-other-event-flow.hurl`
+>
+> Verify this sequence:
+>
+> 1. first event defines `RULES_EVALUATED` with a long TTL;
+> 2. status returns `WAITING_OTHER_EVENT`;
+> 3. expectation name and deadline are present;
+> 4. an event with a new ID but wrong event name returns `409 CONFLICT`;
+> 5. the conflict message identifies `RULES_EVALUATED`;
+> 6. subsequent status remains unchanged with `eventsReceived = 1`.
+>
+> Confirm the stable conflict message:
+>
+> ```text
+> Unexpected event. Expected RULES_EVALUATED
+> ```
+>
+> #### `completed-flow.hurl`
+>
+> Verify this sequence:
+>
+> 1. first event defines `PAYMENT_CONFIRMED` with a long TTL;
+> 2. status initially returns `WAITING_OTHER_EVENT`;
+> 3. the expected final event returns `201`;
+> 4. status returns `COMPLETED`;
+> 5. expectation fields are null;
+> 6. `completedAt` is present;
+> 7. `eventsReceived = 2`;
+> 8. a new event after completion returns `409 CONFLICT`;
+> 9. subsequent status remains completed and unchanged.
+>
+> Confirm the stable conflict message:
+>
+> ```text
+> Trace is already completed
+> ```
+>
+> #### `ttl-expired-flow.hurl`
+>
+> Verify this sequence:
+>
+> 1. first event defines `DELIVERY_CONFIRMED` with a two-second TTL;
+>
+> 2. immediate status returns `WAITING_OTHER_EVENT`;
+>
+> 3. the later status request contains:
+>
+>    ```text
+>    [Options]
+>    delay: 3 s
+>    ```
+>
+> 4. delayed status returns `TTL_EXPIRED_FOR_EVENT`;
+>
+> 5. the expected event submitted after expiration returns `409 CONFLICT`;
+>
+> 6. subsequent status remains expired with `eventsReceived = 1`.
+>
+> Confirm the stable conflict message:
+>
+> ```text
+> Expected event arrived after the TTL deadline
+> ```
+>
+> Ensure the delay applies to the intended status request rather than the initial event request.
+>
+> Do not attempt an exact-deadline HTTP assertion.
+>
+> #### Scenario isolation
+>
+> Confirm that identifiers include both:
+>
+> * a descriptive scenario prefix;
+> * `{{run_id}}`.
+>
+> Running the complete command again with a different `run_id` must not conflict with an earlier execution.
+>
+> Do not add cleanup requests.
+>
+> #### Corrections
+>
+> Make corrections only for concrete Hurl syntax, assertion, identifier, ordering, or contract defects.
+>
+> Do not weaken assertions merely to make the scenarios pass.
+>
+> If an assertion fails because the live API violates its documented behavior, stop and report the API defect before changing production code.
+>
+> #### Validation
+>
+> Run:
+>
+> ```bash
+> hurl --version
+> git diff --check
+> ./mvnw -q test
+> ```
+>
+> Confirm PostgreSQL is healthy and the application is running:
+>
+> ```bash
+> docker compose -f docker/docker-compose.yml ps
+> curl -sS -i http://localhost:8080/api/health
+> ```
+>
+> Then execute:
+>
+> ```bash
+> RUN_ID="task10-$(date +%s)"
+>
+> hurl --test \
+>   --error-format long \
+>   --variable base_url=http://localhost:8080/api \
+>   --variable run_id="$RUN_ID" \
+>   hurl/started-flow.hurl \
+>   hurl/waiting-other-event-flow.hurl \
+>   hurl/completed-flow.hurl \
+>   hurl/ttl-expired-flow.hurl
+> ```
+>
+> Run the complete suite a second time with a new `run_id` to confirm scenario isolation:
+>
+> ```bash
+> RUN_ID="task10-repeat-$(date +%s)"
+>
+> hurl --test \
+>   --error-format long \
+>   --variable base_url=http://localhost:8080/api \
+>   --variable run_id="$RUN_ID" \
+>   hurl/started-flow.hurl \
+>   hurl/waiting-other-event-flow.hurl \
+>   hurl/completed-flow.hurl \
+>   hurl/ttl-expired-flow.hurl
+> ```
+>
+> #### After execution
+>
+> Report:
+>
+> 1. findings;
+> 2. corrections made;
+> 3. Hurl version;
+> 4. assertions in each file;
+> 5. exact scenario execution counts;
+> 6. first-run result;
+> 7. repeat-run result;
+> 8. any API defect discovered;
+> 9. remaining end-to-end risk.
+>
+> Do not mark Task 10 complete yet.
+
+
 ## Initial Design Decisions
 
 These decisions must remain consistent across the code, tests, and documentation:
@@ -2080,6 +2798,10 @@ So far, AI assistance has been used for:
 * Diagnosis of the Hibernate 7.2 and Jackson 3 JSON-mapping incompatibility.
 * Custom Hibernate `FormatMapper` implementation for Jackson 3.
 * PostgreSQL-backed manual API and JSONB verification.
+* Focused `EventIngestionService` unit-test generation and review.
+* Transaction, rollback-order, retry-bound, and timestamp-reuse test verification.
+* Hurl end-to-end scenario generation, syntax review, and live execution.
+* Repeat-run verification of Hurl scenario isolation through unique `run_id` values.
 
 Implementation assistance will continue to be documented as it occurs.
 
@@ -2133,6 +2855,11 @@ The following suggestions were accepted for the implementation plan:
 * Use Hibernate JSON mapping with Jackson 3 `JsonNode` for PostgreSQL `JSONB`.
 * Calculate trace status in a pure domain component and obtain current time from an injected UTC `Clock`.
 * Validate persisted expectation-field pairing before applying status precedence.
+* Keep the Hurl suite in four independent scenario files matching the required public flows.
+* Use unique scenario-prefixed identifiers containing `{{run_id}}` so repeated Hurl runs remain isolated.
+* Use long TTL values for ordinary waiting/completion flows and a controlled short TTL plus request delay for expiration.
+* Validate only public HTTP behavior in Hurl rather than querying PostgreSQL directly.
+* Run the complete Hurl suite twice with distinct `run_id` values to verify repeatability.
 
 ## Rejected Suggestions
 
@@ -2156,6 +2883,9 @@ The following suggestions or possible approaches were rejected:
 * Retaining the partial pending-deadline index, because the MVP performs primary-key trace lookup and lazy expiration rather than scanning pending traces by deadline.
 * Using `com.fasterxml.jackson.databind.JsonNode`, because this Spring Boot 4 project resolves Jackson 3 under the `tools.jackson.databind` package.
 * Adding validation annotations, controllers, services, repositories, JPA entities, exception handlers, or tests during Task 3, because those belong to later scoped tasks.
+* Testing the exact TTL deadline boundary through Hurl, because network and process timing cannot reliably target the precise instant; deterministic unit tests cover that boundary.
+* Adding direct database assertions to Hurl scenarios, because Task 10 validates only the public HTTP contract.
+* Using external shell sleeps inside the Hurl scenarios, because request-level Hurl delay keeps timing behavior within the test definition.
 
 ## Manual Corrections and Adjustments
 
@@ -2200,6 +2930,26 @@ clarops sr engineer challenge
 * Confirmed that no validation annotations, controllers, services, repositories, JPA entities, persistence logic, tests, or DDL changes were added during Task 3.
 * Recorded that `git diff --check` passed.
 * Recorded that `./mvnw -q -DskipTests compile` passed after the Jackson package correction.
+* Reviewed the final 30-test `EventIngestionServiceTest` implementation after it was committed to `develop`; Task 9 was then marked complete.
+* Corrected the Task 10 Hurl request delay from `delay: 3 s` to the Hurl 8.0.0-compatible form `delay: 3000ms`.
+* Hurl was not installed globally, so the existing Hurl 8.0.0 Debian package was extracted to a temporary directory and its binary was used for validation.
+* Ran all four Hurl files twice with distinct `run_id` values; both runs completed 20 requests with no failures.
+
+## Review Performed on Generated Output
+
+Generated output was not accepted solely from Codex summaries. The following review was performed:
+
+* Compared the generated DDL against the documented invariants, then removed the unused pending-deadline index and verified clean PostgreSQL initialization.
+* Reviewed API contracts for package separation, field completeness, timestamp types, metadata structure, and omitted-boolean normalization.
+* Reviewed validation and exception handling for deterministic messages, stable error codes, and absence of leaked parser, SQL, stack-trace, or implementation details.
+* Compared JPA mappings against SQL column names, lengths, nullability, enum storage, JSONB storage, foreign keys, and optimistic-lock versioning.
+* Reviewed status calculation for exact deadline semantics, completion precedence, and explicit handling of impossible half-paired persisted states.
+* Reviewed event ingestion for transaction boundaries, duplicate lookup order, metadata equality, rejected-event immutability, bounded retry behavior, and post-rollback race recovery.
+* Manually exercised the public API against PostgreSQL and corrected the Hibernate 7.2/Jackson 3 JSON `FormatMapper` incompatibility discovered at runtime.
+* Reviewed the Task 9 unit tests for scenario separation, persistence assertions, transaction commit/rollback ordering, bounded retries, and timestamp reuse.
+* Reviewed the Task 10 Hurl files for public-route correctness, independent identifiers, stable response assertions, deterministic TTL behavior, and repeat-run isolation.
+* Confirmed that no production change was introduced merely to satisfy Task 9 or Task 10 tests.
+* Recorded remaining limitations rather than presenting mocked concurrency tests as true concurrent PostgreSQL verification.
 
 ## Implementation Records
 
@@ -2607,8 +3357,52 @@ Remaining risk:
 * They do not prove real concurrent PostgreSQL behavior, transaction isolation behavior, or database race timing.
 * Those concerns remain suitable for manual verification, Hurl coverage where applicable, or a future integration-test layer.
 
-At this stage, Task 9 had not yet been marked complete in `TASKS.md` because the test file still required commit and repository-level review.
+After the test file was committed to `develop` and reviewed at repository level, Task 9 was marked complete in `TASKS.md`.
 
+### Task 10 Hurl End-to-End Test Record
+
+Codex created:
+
+* `hurl/started-flow.hurl`
+* `hurl/waiting-other-event-flow.hurl`
+* `hurl/completed-flow.hurl`
+* `hurl/ttl-expired-flow.hurl`
+
+Coverage:
+
+* `STARTED`;
+* exact and conflicting duplicates;
+* `WAITING_OTHER_EVENT`;
+* unexpected-event rejection;
+* `COMPLETED`;
+* post-completion rejection;
+* `TTL_EXPIRED_FOR_EVENT`;
+* late-event rejection;
+* rejected events leaving public trace state unchanged.
+
+Manual correction:
+
+* Hurl 8.0.0 rejected `delay: 3 s`.
+* The request delay was corrected to `delay: 3000ms`.
+
+Validation:
+
+* `git diff --check` passed.
+* `./mvnw -q test` passed with 41 tests.
+* PostgreSQL was healthy.
+* `/api/health` returned HTTP 200.
+* Hurl was not installed on `PATH`; the untracked `hurl_8.0.0_amd64.deb` package was extracted to a temporary directory and the extracted Hurl 8.0.0 binary was used.
+* The first Hurl run executed 4 files and 20 requests: 4 files succeeded and 0 failed.
+* Request breakdown: 5 started-flow requests, 4 waiting-flow requests, 6 completed-flow requests, and 5 expiration-flow requests.
+* A second run with a different `run_id` again executed all 4 files and 20 requests with 0 failures.
+* The repeat run confirmed scenario isolation.
+* No API defect was discovered.
+* Task 10 was marked complete after both successful runs.
+
+Remaining risk:
+
+* The successful Hurl runs did not begin from a newly reset Docker volume.
+* Clean-database execution remains part of Task 12 final verification.
 
 ## Manual Review Responsibilities
 
@@ -2631,8 +3425,6 @@ All AI-assisted output will be reviewed for:
 
 The remaining documentation work is:
 
-* Record the final Task 9 commit and repository-level review, then mark Task 9 complete in `TASKS.md`.
-* Record Hurl scenarios and their execution results.
-* Record README and API-documentation changes.
-* Record final submission validation.
-* Record any defects discovered during Tasks 10–12 and their corrections.
+* Complete the required `README.md` and API-documentation updates for Task 11.
+* Record final clean-database and submission validation from Task 12.
+* Record any defects discovered during Tasks 11–12 and their corrections.
