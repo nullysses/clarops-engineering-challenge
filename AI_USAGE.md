@@ -1413,7 +1413,6 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 
 ### Prompt 16 — Implement Task 9: focused unit tests
 
->
 > Review the current `README.md`, `TASKS.md`, `AI_USAGE.md`, API contracts, persistence entities, repositories, `TraceStatusCalculator`, `TraceStatusService`, and `EventIngestionService` before editing.
 >
 > Implement only Task 9: focused unit tests for the watchdog domain and service behavior.
@@ -1719,7 +1718,6 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 
 ### Prompt 17 — Review and correct Task 9 unit tests
 
->
 > Review only the Task 9 changes in:
 >
 > ```text
@@ -2155,7 +2153,7 @@ The following suggestions or possible approaches were rejected:
 * Adding an additional Git implementation branch, because development will continue directly on the fork's `develop` branch.
 * Installing SDKMAN, because the development environment already provides a valid Java 21 installation.
 * Treating a clean database reset as something Codex should execute automatically, because removing Docker volumes is a destructive local-environment operation that requires manual execution.
-* Accepting the partial pending-deadline index without review; it will be retained only if its value is documented, because the MVP status endpoint looks up traces by primary key rather than scanning pending traces.
+* Retaining the partial pending-deadline index, because the MVP performs primary-key trace lookup and lazy expiration rather than scanning pending traces by deadline.
 * Using `com.fasterxml.jackson.databind.JsonNode`, because this Spring Boot 4 project resolves Jackson 3 under the `tools.jackson.databind` package.
 * Adding validation annotations, controllers, services, repositories, JPA entities, exception handlers, or tests during Task 3, because those belong to later scoped tasks.
 
@@ -2217,6 +2215,20 @@ Generated changes:
 * Stored metadata as PostgreSQL `JSONB`.
 * Added primary keys, a foreign key, check constraints, and trace-history indexing.
 * Did not add a mutable status column, a redundant completion boolean, a payload hash, or application code.
+
+Verification and final decisions:
+
+* Inspected the complete SQL schema and confirmed that all paired expectation fields, completion invariants, positive TTL rules, positive event-count rules, non-negative version rules, result constraints, the foreign key, and object-only metadata constraints express the intended invariants.
+* Confirmed that omitted metadata is normalized by the ingestion service to `{}` and is logically equivalent to an explicit empty object.
+* Confirmed that duplicate comparison uses structured `JsonNode` equality, so JSON object property order is irrelevant.
+* Removed the partial index on pending expectation deadlines because the application performs primary-key trace lookup and lazy expiration rather than deadline scans.
+* Retained `idx_trace_event_trace_id_received_at` for ordered event-history access.
+* Corrected the schema header to describe application-provided identifiers rather than requiring UUIDs.
+* Reinitialized PostgreSQL from a clean Docker volume.
+* Confirmed that the PostgreSQL container reached healthy status.
+* Confirmed that the clean initialization created exactly `health`, `trace_state`, and `trace_event`.
+* Confirmed that all expected primary keys, foreign keys, check constraints, and indexes were created.
+* Task 2 was confirmed complete after clean initialization and schema inspection.
 
 ### Task 3 Implementation Record
 
@@ -2527,8 +2539,75 @@ Tasks 6, 7, and 8 were marked complete after successful manual verification.
 
 Remaining risk:
 
-* Concurrent duplicate insertion, concurrent trace creation, and optimistic-lock recovery require focused automated coverage in Task 9.
+* Focused unit coverage for concurrent duplicate insertion, concurrent trace creation, and optimistic-lock recovery was added in Task 9. True concurrent PostgreSQL execution remains outside the unit-test scope.
 
+
+
+### Task 9 Unit-Test and Review Record
+
+Codex implemented focused unit coverage for `EventIngestionService` without changing production code.
+
+File created:
+
+* `src/test/java/com/clara/challenge/watchdog/service/EventIngestionServiceTest.java`
+
+Initial implementation:
+
+* Added 28 tests covering normal ingestion, duplicate handling, lifecycle rejection, optimistic-lock recovery, integrity-violation recovery, timestamp reuse, and bounded trace-creation retry behavior.
+* Used the real `TransactionTemplate` through a mocked `PlatformTransactionManager`.
+* Configured each transaction to receive a fresh `SimpleTransactionStatus`.
+* Used mocked repositories and real `TraceState` and `TraceEvent` instances.
+* Used a controlled `Clock` to verify one acceptance timestamp per public `ingest` call.
+* Verified rollback-before-recovery-read ordering with Mockito `InOrder`.
+* Confirmed that no Spring context, database, H2, Testcontainers, sleeps, reflection, controller tests, or Hurl tests were introduced.
+
+Review findings:
+
+* Half-paired persisted expectation coverage initially included only expected-event name without deadline.
+* Completed and expired duplicate behavior was initially combined into one broad test.
+* Rollback-order helpers did not verify the failing repository operation before rollback.
+* Some persisted `TraceEvent` assertions were incomplete.
+* Normal and exact-duplicate transaction commits were not explicitly verified.
+
+Corrections:
+
+* Split completed-trace and expired-trace duplicate short-circuit coverage into separate tests.
+* Added the deadline-without-expected-event persisted-state test.
+* Renamed the original half-paired-state test to identify the name-without-deadline case explicitly.
+* Added complete persisted `TraceEvent` field assertions in normal-ingestion paths.
+* Added commit-without-rollback verification for normal first-event and exact-duplicate transactions.
+* Tightened failure-operation, rollback, recovery-transaction, and recovery-read ordering assertions.
+* Added retry-count assertions for bounded trace-creation retry paths.
+* Kept all tests routed through the public `EventIngestionService.ingest` method.
+* Added no production, configuration, dependency, DDL, controller, Hurl, or documentation behavior changes as part of the test implementation.
+
+Validation performed:
+
+```bash
+git diff --check
+./mvnw -q -Dtest=EventIngestionServiceTest test
+./mvnw -q test
+```
+
+Results:
+
+```text
+EventIngestionServiceTest: 30 tests, 0 failures, 0 errors
+Full suite: 41 tests, 0 failures, 0 errors
+```
+
+Environment note:
+
+* Mockito's inline mock maker could not attach the Byte Buddy agent inside the sandboxed JVM, so the Maven test runs were repeated outside the sandbox.
+* This was an execution-environment limitation rather than a production-code defect.
+
+Remaining risk:
+
+* These tests provide unit coverage of concurrency-recovery behavior using mocked repositories and a mocked transaction manager.
+* They do not prove real concurrent PostgreSQL behavior, transaction isolation behavior, or database race timing.
+* Those concerns remain suitable for manual verification, Hurl coverage where applicable, or a future integration-test layer.
+
+At this stage, Task 9 had not yet been marked complete in `TASKS.md` because the test file still required commit and repository-level review.
 
 
 ## Manual Review Responsibilities
@@ -2552,9 +2631,8 @@ All AI-assisted output will be reviewed for:
 
 The remaining documentation work is:
 
-* Record Task 9 unit-test and concurrency-test prompts and results.
+* Record the final Task 9 commit and repository-level review, then mark Task 9 complete in `TASKS.md`.
 * Record Hurl scenarios and their execution results.
 * Record README and API-documentation changes.
-* Resolve and document the final decision on the partial pending-deadline index.
-* Record final clean-database and submission validation.
-* Record any defects discovered during Tasks 9–12 and their corrections.
+* Record final submission validation.
+* Record any defects discovered during Tasks 10–12 and their corrections.
