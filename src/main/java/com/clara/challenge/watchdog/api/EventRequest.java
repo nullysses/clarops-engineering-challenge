@@ -15,8 +15,7 @@ public record EventRequest(
     @NotNull(message = "result must be present") EventResult result,
     @NotNull(message = "occurredAt must be present") Instant occurredAt,
     String nextExpectedEvent,
-    @Positive(message = "nextEventTtlSeconds must be greater than zero")
-        Integer nextEventTtlSeconds,
+    @Positive(message = "nextEventTtlSeconds must be greater than zero") Integer nextEventTtlSeconds,
     Boolean finalEvent,
     JsonNode metadata) {
 
@@ -25,7 +24,8 @@ public record EventRequest(
   }
 
   @AssertTrue(
-      message = "nextExpectedEvent and nextEventTtlSeconds must either both be present or both be absent")
+      message =
+          "nextExpectedEvent and nextEventTtlSeconds must either both be present or both be absent")
   public boolean isExpectedEventPairValid() {
     return (nextExpectedEvent == null && nextEventTtlSeconds == null)
         || (nextExpectedEvent != null && nextEventTtlSeconds != null);

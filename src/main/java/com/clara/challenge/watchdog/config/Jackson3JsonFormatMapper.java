@@ -42,15 +42,16 @@ public class Jackson3JsonFormatMapper extends AbstractJsonFormatMapper {
 
   @Override
   public <T> void writeToTarget(
-      T value, JavaType<T> javaType, Object target, WrapperOptions wrapperOptions) throws IOException {
+      T value, JavaType<T> javaType, Object target, WrapperOptions wrapperOptions)
+      throws IOException {
     objectMapper
         .writerFor(objectMapper.constructType(javaType.getJavaType()))
         .writeValue((JsonGenerator) target, value);
   }
 
   @Override
-  public <T> T readFromSource(
-      JavaType<T> javaType, Object source, WrapperOptions wrapperOptions) throws IOException {
+  public <T> T readFromSource(JavaType<T> javaType, Object source, WrapperOptions wrapperOptions)
+      throws IOException {
     return objectMapper.readValue(
         (JsonParser) source, objectMapper.constructType(javaType.getJavaType()));
   }

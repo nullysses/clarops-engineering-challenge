@@ -38,7 +38,6 @@
 
 * Define `EventResult` with `SUCCESS` and `ERROR`.
 * Define `TraceStatus` with:
-
   * `STARTED`;
   * `WAITING_OTHER_EVENT`;
   * `TTL_EXPIRED_FOR_EVENT`;
@@ -104,7 +103,6 @@
 * Reject expected events arriving at or after the deadline.
 * Reject new non-duplicate events after completion.
 * Update trace state for:
-
   * final events;
   * events defining another expectation;
   * events leaving the trace active without an expectation.
@@ -124,7 +122,6 @@
 * Return `409 Conflict` for conflicting duplicates and invalid state transitions.
 * Return `404 Not Found` for unknown traces.
 * Return current status with:
-
   * latest event information;
   * current expectation;
   * expectation deadline;
@@ -178,7 +175,6 @@ Verification completed:
 * Add `hurl/completed-flow.hurl`.
 * Add `hurl/ttl-expired-flow.hurl`.
 * Add selected conflict scenarios for:
-
   * exact duplicate event;
   * conflicting duplicate event;
   * unexpected event;
@@ -202,7 +198,7 @@ Verification completed:
 
 ## Task 11 — Complete documentation
 
-**Status:** Pending
+**Status:** Complete
 
 Update `README.md` with:
 
@@ -233,9 +229,20 @@ Update `AI_USAGE.md` with:
 * Manual corrections.
 * Review performed on generated output.
 
+Completion notes:
+
+* `README.md` documents the implemented problem understanding, assumptions, technical design,
+  database model, state transitions, duplicate/conflict behavior, setup, unit tests, Hurl tests,
+  limitations, and production improvements.
+* `AI_USAGE.md` records the prompts, accepted and rejected suggestions, manual corrections,
+  generated-output review, Task 9 results, Task 10 results, and Task 12 final verification record.
+* Documentation was reviewed against the implementation for `/api` routes, DTO fields, status values,
+  error codes, TTL semantics, duplicate equality, metadata normalization, concurrency safeguards,
+  unit-test counts, and Hurl request counts.
+
 ## Task 12 — Final verification
 
-**Status:** Pending
+**Status:** Complete
 
 * Run `./mvnw clean spotless:apply verify`.
 * Run all unit tests.
@@ -247,3 +254,16 @@ Update `AI_USAGE.md` with:
 * Review `README.md`, `TASKS.md`, `AI_USAGE.md`, code, DDL, and tests for consistency.
 * Confirm that all generated code can be explained and defended.
 * Confirm that the repository contains every required deliverable.
+
+Completion notes:
+
+* `./mvnw clean spotless:apply verify` completed successfully with 41 tests, 0 failures, 0 errors,
+  and 0 skipped tests.
+* `./mvnw -q test` completed successfully; Surefire reports 41 tests, 0 failures, 0 errors, and 0
+  skipped tests.
+* The PostgreSQL Docker volume was deleted and recreated; the clean schema was verified from
+  `docker/init-scripts/db/01-init-schema.sql`.
+* `/api/health` returned HTTP 200 with `clarops sr engineer challenge`.
+* Hurl 8.0.0 executed 4 files and 20 public API requests from the clean database with 0 failures.
+* Manual API repetition was not needed because the Hurl scenarios fully exercised the documented
+  public flows.

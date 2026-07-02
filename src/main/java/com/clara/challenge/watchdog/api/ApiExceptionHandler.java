@@ -26,7 +26,8 @@ public class ApiExceptionHandler {
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public ResponseEntity<ApiErrorResponse> handleMethodArgumentNotValid(
       MethodArgumentNotValidException exception) {
-    return error(HttpStatus.BAD_REQUEST, VALIDATION_ERROR, methodArgumentValidationMessage(exception));
+    return error(
+        HttpStatus.BAD_REQUEST, VALIDATION_ERROR, methodArgumentValidationMessage(exception));
   }
 
   @ExceptionHandler(ConstraintViolationException.class)
@@ -53,8 +54,7 @@ public class ApiExceptionHandler {
     return error(HttpStatus.CONFLICT, CONFLICT, exception.getMessage());
   }
 
-  private ResponseEntity<ApiErrorResponse> error(
-      HttpStatus status, String code, String message) {
+  private ResponseEntity<ApiErrorResponse> error(HttpStatus status, String code, String message) {
     return ResponseEntity.status(status).body(new ApiErrorResponse(code, message, Instant.now()));
   }
 

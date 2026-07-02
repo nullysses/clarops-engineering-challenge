@@ -69,11 +69,9 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 > Create:
 >
 > * `EventResult` with:
->
 >   * `SUCCESS`
 >   * `ERROR`
 > * `TraceStatus` with:
->
 >   * `STARTED`
 >   * `WAITING_OTHER_EVENT`
 >   * `TTL_EXPIRED_FOR_EVENT`
@@ -686,7 +684,6 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 > git diff --check
 > ./mvnw -q test
 > ```
->
 
 ### Prompt 11 — Review and correct Task 6
 
@@ -925,6 +922,9 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 > git diff --check
 > ./mvnw -q test
 > ```
+>
+<!-- End Prompt 12 -->
+
 ### Prompt 13 — Review and correct Task 7
 
 > Review only the Task 7 implementation in:
@@ -978,9 +978,7 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >    ```java
 >    new EventIngestionResponse(request.eventId(), request.traceId(), true)
 >    ```
->
 > 3. if the event exists with different logical content, throw `WatchdogConflictException`;
->
 > 4. only when the event remains absent should the optimistic-lock failure become a concurrency conflict.
 >
 > This is required because two identical concurrent requests can race on the same trace version, with one committing and the other failing optimistic locking before observing the committed `eventId`.
@@ -991,7 +989,6 @@ The Codex-generated task breakdown was compared against the existing `TASKS.md`.
 >
 > 1. `eventId` is re-read first and resolved as exact or conflicting duplicate when present;
 > 2. a trace-creation retry occurs only if:
->
 >    * the failed attempt was creating a new trace;
 >    * the event is still absent;
 >    * the trace now exists;
@@ -1507,26 +1504,19 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >    * leaves `completedAt` null;
 >    * leaves expectation fields null;
 >    * uses the server acceptance time for created, updated, and received timestamps.
->
 > 3. A first event defining another expectation:
->
 >    * stores the expected event name;
 >    * calculates the deadline from `receivedAt + nextEventTtlSeconds`;
 >    * does not calculate the deadline from client-provided `occurredAt`.
->
 > 4. A first final event:
->
 >    * sets `completedAt` to `receivedAt`;
 >    * clears expectation fields;
 >    * persists final-event history.
->
 > 5. An accepted expected event on an existing trace:
->
 >    * updates all latest-event fields;
 >    * increments `eventsReceived`;
 >    * persists one history event;
 >    * applies the new expectation, completion, or no-expectation outcome from the new request.
->
 > 6. An event with `result = ERROR` follows the same lifecycle rules as a successful event.
 >
 > #### Required duplicate scenarios
@@ -1534,19 +1524,13 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 > Add focused tests covering:
 >
 > 1. An exact duplicate:
->
 >    * returns `duplicate = true`;
 >    * does not read or mutate trace state;
 >    * does not save or flush new history.
->
 > 2. Reusing an `eventId` with changed logical content throws `WatchdogConflictException`.
->
 > 3. Omitted metadata and `{}` are logically equivalent.
->
 > 4. JSON object field order does not affect duplicate equality.
->
 > 5. `receivedAt` is excluded from duplicate comparison.
->
 > 6. Exact duplicates remain idempotent when the associated trace is completed or expired, because event lookup occurs before lifecycle checks.
 >
 > #### Required rejection scenarios
@@ -1577,15 +1561,10 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 > Cover:
 >
 > 1. After rollback, a matching event now exists:
->
 >    * return an idempotent duplicate response.
->
 > 2. After rollback, the same `eventId` exists with different logical content:
->
 >    * throw `WatchdogConflictException`.
->
 > 3. After rollback, the event remains absent:
->
 >    * throw the trace-concurrency `WatchdogConflictException`;
 >    * do not report the event as accepted.
 >
@@ -1598,30 +1577,19 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 > Cover:
 >
 > 1. A matching event now exists after rollback:
->
 >    * return an idempotent duplicate response.
->
 > 2. A conflicting event now exists after rollback:
->
 >    * throw `WatchdogConflictException`.
->
 > 3. The failed attempt was creating a trace, the event remains absent, and the trace now exists:
->
 >    * retry ingestion exactly once;
 >    * reuse the same public-call `receivedAt`;
 >    * accept the event when the retry succeeds.
->
 > 4. The retry encounters an optimistic-lock failure and a matching event is then visible:
->
 >    * return an idempotent duplicate response.
->
 > 5. The retry encounters another unexplained integrity violation and no event exists:
->
 >    * propagate that integrity violation;
 >    * do not convert it into a business conflict.
->
 > 6. An integrity violation unrelated to concurrent trace creation:
->
 >    * propagates unchanged;
 >    * does not trigger an ingestion retry.
 >
@@ -1852,15 +1820,10 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 > Confirm coverage for:
 >
 > 1. matching event visible after rollback:
->
 >    * returns an exact duplicate;
->
 > 2. conflicting event visible after rollback:
->
 >    * throws `WatchdogConflictException`;
->
 > 3. event absent after rollback:
->
 >    * throws the trace-concurrency `WatchdogConflictException`.
 >
 > Verify:
@@ -2267,9 +2230,7 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >    nextExpectedEvent = PAYMENT_CONFIRMED
 >    nextEventTtlSeconds = 120
 >    ```
->
 > 2. Query status and confirm `WAITING_OTHER_EVENT`.
->
 > 3. Submit the expected event with:
 >
 >    ```text
@@ -2280,7 +2241,6 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 >    * `201 Created`;
 >    * `duplicate = false`.
->
 > 4. Query status.
 >
 >    Expected:
@@ -2291,7 +2251,6 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >    * no expected event remains;
 >    * no expectation deadline remains;
 >    * `completedAt` is present.
->
 > 5. Submit another new event after completion.
 >
 >    Expected:
@@ -2299,7 +2258,6 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >    * `409 Conflict`;
 >    * `code = CONFLICT`;
 >    * message states that the trace is already completed.
->
 > 6. Query status again.
 >
 >    Expected:
@@ -2326,19 +2284,16 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >    nextExpectedEvent = DELIVERY_CONFIRMED
 >    nextEventTtlSeconds = 2
 >    ```
->
 > 2. Query status immediately.
 >
 >    Expected:
 >
 >    * `status = WAITING_OTHER_EVENT`.
->
 > 3. Before the next status request, use a request-level Hurl delay long enough to exceed the TTL reliably:
 >
 >    ```text
 >    delay: 3 s
 >    ```
->
 > 4. Query status after the delay.
 >
 >    Expected:
@@ -2347,7 +2302,6 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >    * `nextExpectedEvent = DELIVERY_CONFIRMED`;
 >    * `eventsReceived = 1`;
 >    * `completedAt` remains absent.
->
 > 5. Submit the formerly expected event with a new event ID.
 >
 >    Expected:
@@ -2355,7 +2309,6 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >    * `409 Conflict`;
 >    * `code = CONFLICT`;
 >    * message states that the expected event arrived after the TTL deadline.
->
 > 6. Query status again.
 >
 >    Expected:
@@ -2640,11 +2593,8 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >    [Options]
 >    delay: 3 s
 >    ```
->
 > 4. delayed status returns `TTL_EXPIRED_FOR_EVENT`;
->
 > 5. the expected event submitted after expiration returns `409 CONFLICT`;
->
 > 6. subsequent status remains expired with `eventsReceived = 1`.
 >
 > Confirm the stable conflict message:
@@ -2739,6 +2689,84 @@ The implementation and Task 7 record reflect the corrected Prompt 13 behavior.
 >
 > Do not mark Task 10 complete yet.
 
+### Prompt 20 — Execute Task 12: final repository verification
+
+> Review the complete repository and execute Task 12 final verification.
+>
+> The user explicitly authorizes deletion of the local challenge PostgreSQL Docker volume for this verification.
+>
+> #### Scope
+>
+> Verify production code, DDL, application configuration, unit tests, Hurl scenarios, `README.md`,
+> `TASKS.md`, `AI_USAGE.md`, and required repository deliverables.
+>
+> #### Establish repository state
+>
+> Run `git branch --show-current`, `git status --short`, `git log -1 --oneline`, and
+> `git diff --check`; confirm branch, tracked/untracked state, and absence of accidental deliverables.
+>
+> #### Review Task 11 documentation
+>
+> Verify that `README.md` and `AI_USAGE.md` include the required design, behavior, testing, Hurl, and
+> AI-assistance records and that documentation matches implementation details.
+>
+> #### Run formatting and Maven verification
+>
+> Run `./mvnw clean spotless:apply verify` and `./mvnw -q test`; record exit status, test counts, and
+> Spotless rewrites.
+>
+> #### Reset PostgreSQL completely
+>
+> Stop any earlier application instance, run `docker compose -f docker/docker-compose.yml down -v`,
+> start Docker again, and wait for PostgreSQL health.
+>
+> #### Inspect the clean schema
+>
+> Verify the clean database tables, primary keys, foreign key, check constraints, `trace_state.version`,
+> `trace_event.metadata` as `JSONB`, the trace-event history index, and absence of unintended
+> status/completion columns or removed indexes.
+>
+> #### Start the application against the clean database
+>
+> Start `./mvnw spring-boot:run`, confirm `/api/health` returns HTTP 200 and
+> `clarops sr engineer challenge`, and terminate the process after verification.
+>
+> #### Resolve the Hurl executable
+>
+> Run `hurl --version`, use Hurl 8.0.0, and avoid adding the binary or package to the repository.
+>
+> #### Run every Hurl scenario from the clean database
+>
+> Execute the four Hurl files with a unique `run_id`, expecting 4 files, 20 requests, and 0 failures.
+>
+> #### Decide whether additional manual API repetition is necessary
+>
+> Skip manual repetition when the Hurl scenarios completely exercise the documented public API flows.
+>
+> #### Cross-document and source consistency review
+>
+> Review docs, DDL, configuration, source, tests, and Hurl files for route, enum, field, status,
+> error, TTL, metadata, duplicate, completion, expiration, and count consistency.
+>
+> #### Explainability and defense review
+>
+> Prepare concise defenses for the two-table model, derived status, server-time TTL, injected `Clock`,
+> JSONB metadata, structured duplicate equality, duplicate short-circuiting, transaction structure,
+> flush ordering, optimistic locking, bounded retry, lazy expiration, and Hurl boundary-test limits.
+>
+> #### Required deliverables
+>
+> Confirm the Spring Boot implementation, DDL, documentation, unit tests, Hurl files, setup
+> instructions, and absence of accidental binaries, logs, build output, credentials, or editor metadata.
+>
+> #### Final documentation update
+>
+> Only after every preceding check succeeds, mark Tasks 11 and 12 complete in `TASKS.md`, append a Task
+> 12 verification record to `AI_USAGE.md`, and run final validation.
+>
+> #### Final validation after documentation changes
+>
+> Run `./mvnw clean spotless:apply verify`, `git diff --check`, and `git status --short`.
 
 ## Initial Design Decisions
 
@@ -3291,8 +3319,6 @@ Remaining risk:
 
 * Focused unit coverage for concurrent duplicate insertion, concurrent trace creation, and optimistic-lock recovery was added in Task 9. True concurrent PostgreSQL execution remains outside the unit-test scope.
 
-
-
 ### Task 9 Unit-Test and Review Record
 
 Codex implemented focused unit coverage for `EventIngestionService` without changing production code.
@@ -3423,8 +3449,83 @@ All AI-assisted output will be reviewed for:
 
 ## Pending Updates
 
-The remaining documentation work is:
+No required documentation or verification updates remain pending after Task 12.
 
-* Complete the required `README.md` and API-documentation updates for Task 11.
-* Record final clean-database and submission validation from Task 12.
-* Record any defects discovered during Tasks 11–12 and their corrections.
+## Task 12 Final Verification Record
+
+Task 12 was executed against the repository on branch `develop`.
+
+Initial repository state:
+
+* Current branch: `develop`.
+* Initial `git status --short`: clean.
+* Latest commit at start of verification: `12477dd docs: complete challenge documentation`.
+* Initial `git diff --check`: clean.
+
+Maven and unit-test verification:
+
+* `./mvnw clean spotless:apply verify` exited successfully.
+* Surefire during `verify`: 41 tests, 0 failures, 0 errors, 0 skipped.
+* Spotless rewrote existing Java, SQL, and Markdown formatting.
+* `./mvnw -q test` exited successfully.
+* Surefire after the explicit unit run: 41 tests, 0 failures, 0 errors, 0 skipped.
+
+Clean Docker and schema verification:
+
+* The previous application process on port 8080 was stopped before the reset.
+* `docker compose -f docker/docker-compose.yml down -v` removed the challenge PostgreSQL container,
+  network, and `postgresql_data` volume.
+* `docker compose -f docker/docker-compose.yml up -d` recreated the Docker environment, and PostgreSQL
+  reported healthy.
+* The clean schema contained `clarops_challenge_schema.health`, `trace_state`, and `trace_event`.
+* Schema inspection confirmed `trace_state.trace_id` as the primary key, `trace_event.event_id` as the
+  primary key, and `trace_event.trace_id` as a foreign key to `trace_state.trace_id`.
+* Schema inspection confirmed expected check constraints, `trace_state.version`,
+  `trace_event.metadata` as `JSONB`, and `idx_trace_event_trace_id_received_at`.
+* No mutable `status` column, `completed` boolean, or removed pending-deadline index was present.
+
+Application and Hurl verification:
+
+* The application started successfully with context path `/api`.
+* `GET /api/health` returned HTTP 200 and body `clarops sr engineer challenge`.
+* Hurl executable: `/usr/bin/hurl`.
+* Hurl version: `hurl 8.0.0`.
+* Clean run ID: `task12-clean-1782950998`.
+* Hurl executed `hurl/started-flow.hurl`, `hurl/waiting-other-event-flow.hurl`,
+  `hurl/completed-flow.hurl`, and `hurl/ttl-expired-flow.hurl`.
+* Hurl result: 4 files, 20 requests, 4 succeeded files, 0 failed files.
+* Request distribution: started flow 5, waiting flow 4, completed flow 6, TTL-expired flow 5.
+* The expiration scenario uses `delay: 3000ms`.
+* Database inspection after Hurl confirmed 4 trace rows and 5 accepted event-history rows for the clean
+  run.
+* Additional manual API repetition was skipped because the public Hurl scenarios fully exercised the
+  documented flows.
+
+Consistency and explainability review:
+
+* `README.md`, `TASKS.md`, `AI_USAGE.md`, `SETUP.md`, DDL, configuration, source, tests, and Hurl files
+  were reviewed for route, enum, field, status, error-code, HTTP-status, TTL, metadata, duplicate,
+  completion, expiration, unit-test-count, and Hurl-count consistency.
+* A stale README example saying TTL is calculated from `occurredAt` was corrected to the implemented
+  server-acceptance-time rule.
+* A stale README duplicate-example line was corrected to distinguish exact idempotent duplicates from
+  conflicting event-ID reuse.
+* No production class, method, SQL constraint, unit test, or Hurl assertion was found that could not be
+  explained from the documented design.
+
+Deliverable review:
+
+* Required deliverables are present: Spring Boot implementation, PostgreSQL DDL, Docker init SQL,
+  `README.md`, `SETUP.md`, `TASKS.md`, `AI_USAGE.md`, unit tests, all four Hurl files, and run/test
+  instructions.
+* `git ls-files` shows no committed Hurl binary, `.deb`, logs, build output, credentials, or editor
+  metadata.
+* Ignored local files observed during verification: `.github/`, `.vscode/`, `docker/.env`, and
+  `target/`.
+* No `Zone.Identifier` files were present.
+
+Defects and corrections:
+
+* No production-code defect was discovered.
+* Documentation corrections were limited to stale README example text and final Task 11/12 verification
+  records.

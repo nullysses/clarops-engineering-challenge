@@ -54,7 +54,12 @@ CREATE
       created_at TIMESTAMPTZ NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL,
       version BIGINT NOT NULL DEFAULT 0,
-      CONSTRAINT trace_state_last_event_result_check CHECK(last_event_result IN('SUCCESS', 'ERROR')),
+      CONSTRAINT trace_state_last_event_result_check CHECK(
+        last_event_result IN(
+          'SUCCESS',
+          'ERROR'
+        )
+      ),
       CONSTRAINT trace_state_expectation_pair_check CHECK(
         (
           next_expected_event IS NULL
@@ -80,8 +85,12 @@ CREATE
         completed_at IS NULL
         OR completed_at >= last_event_received_at
       ),
-      CONSTRAINT trace_state_events_received_positive_check CHECK(events_received > 0),
-      CONSTRAINT trace_state_version_non_negative_check CHECK(version >= 0)
+      CONSTRAINT trace_state_events_received_positive_check CHECK(
+        events_received > 0
+      ),
+      CONSTRAINT trace_state_version_non_negative_check CHECK(
+        version >= 0
+      )
     );
 
 -- -------------------------
@@ -95,7 +104,7 @@ CREATE
       event_id VARCHAR(120) PRIMARY KEY,
       trace_id VARCHAR(120) NOT NULL,
       event_name VARCHAR(120) NOT NULL,
-      result VARCHAR(20) NOT NULL,
+      RESULT VARCHAR(20) NOT NULL,
       occurred_at TIMESTAMPTZ NOT NULL,
       received_at TIMESTAMPTZ NOT NULL,
       next_expected_event VARCHAR(120),
@@ -103,7 +112,12 @@ CREATE
       final_event BOOLEAN NOT NULL DEFAULT FALSE,
       metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
       CONSTRAINT trace_event_trace_id_fk FOREIGN KEY(trace_id) REFERENCES trace_state(trace_id),
-      CONSTRAINT trace_event_result_check CHECK(result IN('SUCCESS', 'ERROR')),
+      CONSTRAINT trace_event_result_check CHECK(
+        RESULT IN(
+          'SUCCESS',
+          'ERROR'
+        )
+      ),
       CONSTRAINT trace_event_expectation_pair_check CHECK(
         (
           next_expected_event IS NULL
@@ -125,10 +139,14 @@ CREATE
           AND next_event_ttl_seconds IS NULL
         )
       ),
-      CONSTRAINT trace_event_metadata_object_check CHECK(JSONB_TYPEOF(metadata) = 'object')
+      CONSTRAINT trace_event_metadata_object_check CHECK(
+        JSONB_TYPEOF(metadata)= 'object'
+      )
     );
 
 CREATE
-  INDEX
-    IF NOT EXISTS idx_trace_event_trace_id_received_at
-      ON trace_event(trace_id, received_at);
+  INDEX IF NOT EXISTS idx_trace_event_trace_id_received_at ON
+  trace_event(
+    trace_id,
+    received_at
+  );

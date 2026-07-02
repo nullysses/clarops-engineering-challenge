@@ -768,7 +768,8 @@ class EventIngestionServiceTest {
     DataIntegrityViolationException creationFailure =
         new DataIntegrityViolationException("trace already exists");
     when(traceEventRepository.findById(request.eventId()))
-        .thenReturn(Optional.empty(), Optional.empty(), Optional.empty(), Optional.of(matchingEvent));
+        .thenReturn(
+            Optional.empty(), Optional.empty(), Optional.empty(), Optional.of(matchingEvent));
     when(traceStateRepository.findById(TRACE_ID))
         .thenReturn(Optional.empty(), Optional.of(concurrentlyCreatedTrace));
     when(traceStateRepository.existsById(TRACE_ID)).thenReturn(true);

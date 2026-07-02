@@ -42,7 +42,8 @@ public class EventIngestionService {
 
   public EventIngestionResponse ingest(EventRequest request) {
     Instant receivedAt = Instant.now(clock);
-    LogicalEventPayload requestPayload = LogicalEventPayload.from(request, normalizeMetadata(request));
+    LogicalEventPayload requestPayload =
+        LogicalEventPayload.from(request, normalizeMetadata(request));
     AttemptContext context = new AttemptContext();
 
     try {
@@ -50,7 +51,8 @@ public class EventIngestionService {
     } catch (OptimisticLockingFailureException | OptimisticLockException exception) {
       return resolveOptimisticLockFailureAfterRollback(request, requestPayload, exception);
     } catch (DataIntegrityViolationException exception) {
-      return resolveIntegrityFailureAfterRollback(request, requestPayload, receivedAt, context, exception);
+      return resolveIntegrityFailureAfterRollback(
+          request, requestPayload, receivedAt, context, exception);
     }
   }
 
@@ -62,8 +64,7 @@ public class EventIngestionService {
     return Objects.requireNonNull(
         transactionTemplate.execute(
             status -> {
-              Optional<TraceEvent> existingEvent =
-                  traceEventRepository.findById(request.eventId());
+              Optional<TraceEvent> existingEvent = traceEventRepository.findById(request.eventId());
               if (existingEvent.isPresent()) {
                 return resolveExistingEvent(requestPayload, existingEvent.get());
               }
@@ -71,7 +72,9 @@ public class EventIngestionService {
               TraceState traceState =
                   traceStateRepository
                       .findById(request.traceId())
-                      .map(existingTrace -> acceptForExistingTrace(request, receivedAt, existingTrace))
+                      .map(
+                          existingTrace ->
+                              acceptForExistingTrace(request, receivedAt, existingTrace))
                       .orElseGet(() -> createTraceState(request, receivedAt, context));
 
               persistAcceptedEvent(request, requestPayload.metadata(), receivedAt);
@@ -87,7 +90,8 @@ public class EventIngestionService {
       Instant receivedAt,
       AttemptContext context,
       DataIntegrityViolationException exception) {
-    Optional<TraceEvent> eventInsertedByConcurrentTransaction = readEventInNewTransaction(request.eventId());
+    Optional<TraceEvent> eventInsertedByConcurrentTransaction =
+        readEventInNewTransaction(request.eventId());
     if (eventInsertedByConcurrentTransaction.isPresent()) {
       return resolveExistingEvent(requestPayload, eventInsertedByConcurrentTransaction.get());
     }
@@ -112,11 +116,13 @@ public class EventIngestionService {
 
   private EventIngestionResponse resolveOptimisticLockFailureAfterRollback(
       EventRequest request, LogicalEventPayload requestPayload, RuntimeException exception) {
-    Optional<TraceEvent> eventInsertedByConcurrentTransaction = readEventInNewTransaction(request.eventId());
+    Optional<TraceEvent> eventInsertedByConcurrentTransaction =
+        readEventInNewTransaction(request.eventId());
     if (eventInsertedByConcurrentTransaction.isPresent()) {
       TraceEvent existingEvent = eventInsertedByConcurrentTransaction.get();
       if (!requestPayload.equals(LogicalEventPayload.from(existingEvent))) {
-        throw new WatchdogConflictException("Event ID already exists with different logical content");
+        throw new WatchdogConflictException(
+            "Event ID already exists with different logical content");
       }
       return new EventIngestionResponse(request.eventId(), request.traceId(), true);
     }
@@ -214,9 +220,7 @@ public class EventIngestionService {
     }
     if (request.nextExpectedEvent() != null) {
       return new ExpectedEventOutcome(
-          request.nextExpectedEvent(),
-          receivedAt.plusSeconds(request.nextEventTtlSeconds()),
-          null);
+          request.nextExpectedEvent(), receivedAt.plusSeconds(request.nextEventTtlSeconds()), null);
     }
     return new ExpectedEventOutcome(null, null, null);
   }

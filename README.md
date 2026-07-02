@@ -583,9 +583,10 @@ Example structure:
 
 ## Manual Decisions
 
-- Example: TTL is calculated from `occurredAt`.
-- Example: Duplicate `eventId` returns a conflict response.
-- Example: A completed trace does not accept new events.
+- Example: TTL is calculated from server acceptance time, not from `occurredAt`.
+- Example: Exact duplicate `eventId` requests are idempotent; reused IDs with different logical content
+  return conflict.
+- Example: A completed trace does not accept new non-duplicate events.
 ```
 
 ---
@@ -947,16 +948,16 @@ clarops_challenge_schema
 
 `trace_state` stores the latest accepted facts for each trace:
 
-| Column | Purpose |
-| --- | --- |
-| `trace_id` | Natural primary key for the distributed flow |
-| `last_event_*` | Latest accepted event facts |
-| `next_expected_event` | Current expected event name |
-| `next_expected_before` | Server-calculated expectation deadline |
-| `completed_at` | Completion fact and timestamp |
-| `events_received` | Count of accepted, non-duplicate events |
-| `created_at`, `updated_at` | Trace audit timestamps |
-| `version` | Optimistic-lock version |
+|           Column           |                   Purpose                    |
+|----------------------------|----------------------------------------------|
+| `trace_id`                 | Natural primary key for the distributed flow |
+| `last_event_*`             | Latest accepted event facts                  |
+| `next_expected_event`      | Current expected event name                  |
+| `next_expected_before`     | Server-calculated expectation deadline       |
+| `completed_at`             | Completion fact and timestamp                |
+| `events_received`          | Count of accepted, non-duplicate events      |
+| `created_at`, `updated_at` | Trace audit timestamps                       |
+| `version`                  | Optimistic-lock version                      |
 
 Status is derived from these facts. There is no persisted mutable status column or separate completion
 boolean.
@@ -965,16 +966,16 @@ boolean.
 
 `trace_event` stores one immutable history row for every newly accepted event:
 
-| Column | Purpose |
-| --- | --- |
-| `event_id` | Global event primary key |
-| `trace_id` | Owning trace, enforced by foreign key |
-| `event_name`, `result` | Event identity and outcome |
-| `occurred_at` | Client-provided event time |
-| `received_at` | Server acceptance time |
-| `next_expected_event`, `next_event_ttl_seconds` | Logical request expectation fields |
-| `final_event` | Whether this event completed the trace |
-| `metadata` | Structured PostgreSQL `JSONB` object |
+|                     Column                      |                Purpose                 |
+|-------------------------------------------------|----------------------------------------|
+| `event_id`                                      | Global event primary key               |
+| `trace_id`                                      | Owning trace, enforced by foreign key  |
+| `event_name`, `result`                          | Event identity and outcome             |
+| `occurred_at`                                   | Client-provided event time             |
+| `received_at`                                   | Server acceptance time                 |
+| `next_expected_event`, `next_event_ttl_seconds` | Logical request expectation fields     |
+| `final_event`                                   | Whether this event completed the trace |
+| `metadata`                                      | Structured PostgreSQL `JSONB` object   |
 
 The full logical request is retained so exact and conflicting duplicate events can be distinguished
 without relying solely on a payload hash.
@@ -1015,18 +1016,18 @@ Keeping both current state and event history provides:
 
 ## State-Transition Rules
 
-| Current condition | Incoming request | Result |
-| --- | --- | --- |
-| Trace does not exist | Non-final event without expectation | Create trace as `STARTED` |
-| Trace does not exist | Non-final event with expectation | Create trace as `WAITING_OTHER_EVENT` |
-| Trace does not exist | Final event | Create trace as `COMPLETED` |
-| Active trace without expectation | New accepted event | Apply the new event outcome |
-| Waiting before deadline | Expected event | Accept and apply its next outcome |
-| Waiting before deadline | Unexpected event | `409 Conflict`; state unchanged |
-| Waiting at or after deadline | Expected event | `409 Conflict`; trace remains expired |
-| Completed trace | New non-duplicate event | `409 Conflict`; state unchanged |
-| Any trace state | Exact duplicate event | `200 OK`; state unchanged |
-| Any trace state | Same `eventId`, different payload | `409 Conflict`; state unchanged |
+|        Current condition         |          Incoming request           |                Result                 |
+|----------------------------------|-------------------------------------|---------------------------------------|
+| Trace does not exist             | Non-final event without expectation | Create trace as `STARTED`             |
+| Trace does not exist             | Non-final event with expectation    | Create trace as `WAITING_OTHER_EVENT` |
+| Trace does not exist             | Final event                         | Create trace as `COMPLETED`           |
+| Active trace without expectation | New accepted event                  | Apply the new event outcome           |
+| Waiting before deadline          | Expected event                      | Accept and apply its next outcome     |
+| Waiting before deadline          | Unexpected event                    | `409 Conflict`; state unchanged       |
+| Waiting at or after deadline     | Expected event                      | `409 Conflict`; trace remains expired |
+| Completed trace                  | New non-duplicate event             | `409 Conflict`; state unchanged       |
+| Any trace state                  | Exact duplicate event               | `200 OK`; state unchanged             |
+| Any trace state                  | Same `eventId`, different payload   | `409 Conflict`; state unchanged       |
 
 For an accepted event, its outcome is applied as follows:
 
@@ -1154,26 +1155,26 @@ Errors use one consistent contract:
 
 Stable error codes are:
 
-| Code | HTTP status | Meaning |
-| --- | ---: | --- |
-| `VALIDATION_ERROR` | 400 | A valid JSON request violates field or cross-field validation |
-| `INVALID_REQUEST` | 400 | Malformed JSON or incompatible JSON value |
-| `NOT_FOUND` | 404 | The requested trace does not exist |
-| `CONFLICT` | 409 | Duplicate-content or lifecycle conflict |
+|        Code        | HTTP status |                            Meaning                            |
+|--------------------|------------:|---------------------------------------------------------------|
+| `VALIDATION_ERROR` |         400 | A valid JSON request violates field or cross-field validation |
+| `INVALID_REQUEST`  |         400 | Malformed JSON or incompatible JSON value                     |
+| `NOT_FOUND`        |         404 | The requested trace does not exist                            |
+| `CONFLICT`         |         409 | Duplicate-content or lifecycle conflict                       |
 
 ### HTTP response summary
 
-| Situation | Response |
-| --- | ---: |
-| New event accepted | `201 Created` |
-| Exact duplicate accepted idempotently | `200 OK` |
-| Existing trace status | `200 OK` |
-| Invalid request | `400 Bad Request` |
-| Unknown trace | `404 Not Found` |
-| Unexpected event | `409 Conflict` |
-| Late expected event | `409 Conflict` |
-| Conflicting duplicate event ID | `409 Conflict` |
-| New event after completion | `409 Conflict` |
+|               Situation               |          Response |
+|---------------------------------------|------------------:|
+| New event accepted                    |     `201 Created` |
+| Exact duplicate accepted idempotently |          `200 OK` |
+| Existing trace status                 |          `200 OK` |
+| Invalid request                       | `400 Bad Request` |
+| Unknown trace                         |   `404 Not Found` |
+| Unexpected event                      |    `409 Conflict` |
+| Late expected event                   |    `409 Conflict` |
+| Conflicting duplicate event ID        |    `409 Conflict` |
+| New event after completion            |    `409 Conflict` |
 
 ## Running the Project
 
